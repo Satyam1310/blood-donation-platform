@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Signature element: a heartbeat/pulse line used as a section divider
+   and a live "availability" indicator — ties to the vitals-monitor
+   motif appropriate for a blood donation product. */
+.pulse-line {
+  width: 100%;
+  height: 32px;
+}
+
+.pulse-line path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pulse-line--animated path {
+    stroke-dasharray: 300;
+    stroke-dashoffset: 300;
+    animation: draw-pulse 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes draw-pulse {
+  0% {
+    stroke-dashoffset: 300;
+  }
+  60% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -300;
+  }
+}
+
+/* Visible keyboard focus, kept consistent across the app */
+:focus-visible {
+  outline: 2px solid #c4293d;
+  outline-offset: 2px;
+}

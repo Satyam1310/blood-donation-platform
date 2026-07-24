@@ -1,0 +1,53 @@
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "./context/AuthContext";
+import Navbar from "./components/Navbar";
+import ProtectedRoute from "./components/ProtectedRoute";
+
+import Home from "./pages/Home";
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
+import Dashboard from "./pages/Dashboard";
+import SearchDonors from "./pages/SearchDonors";
+import Requests from "./pages/Requests";
+import StartRequest from "./pages/StartRequest";
+import Benefits from "./pages/Benefits";
+import Myths from "./pages/Myths";
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <div className="min-h-screen flex flex-col">
+          <Navbar />
+          <main className="flex-1">
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<Signup />} />
+              <Route path="/search" element={<SearchDonors />} />
+              <Route path="/requests" element={<Requests />} />
+              <Route path="/benefits" element={<Benefits />} />
+              <Route path="/myths" element={<Myths />} />
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/start-request"
+                element={
+                  <ProtectedRoute>
+                    <StartRequest />
+                  </ProtectedRoute>
+                }
+              />
+            </Routes>
+          </main>
+        </div>
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
