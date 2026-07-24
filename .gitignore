@@ -12,6 +12,10 @@ node_modules/
 dist/
 **/dist/
 
+# User uploads
+uploads/
+**/uploads/
+
 # Logs
 *.log
 npm-debug.log*
