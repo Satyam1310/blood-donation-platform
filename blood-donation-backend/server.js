@@ -1,4 +1,6 @@
 require("dotenv").config();
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
@@ -16,6 +18,7 @@ connectDB();
 // Middleware
 app.use(cors({ origin: process.env.CLIENT_URL || "*" }));
 app.use(express.json());
+app.use(helmet());
 
 // Serve uploaded verification documents (e.g. /uploads/verification-docs/xyz.pdf)
 // NOTE: these are served without auth for MVP simplicity — restrict this
@@ -27,10 +30,20 @@ app.get("/api/health", (req, res) => {
   res.status(200).json({ status: "ok", message: "Blood Donation API is running" });
 });
 
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200, // max 200 requests per IP per 15 minutes
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use("/api", apiLimiter);
+
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/donors", donorRoutes);
 app.use("/api/requests", requestRoutes);
+
 
 // 404 handler
 app.use((req, res) => {
