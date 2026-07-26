@@ -1,33 +1,62 @@
 const multer = require("multer");
 const path = require("path");
-const fs = require("fs");
 
-const uploadDir = path.join(__dirname, "..", "uploads", "verification-docs");
-fs.mkdirSync(uploadDir, { recursive: true });
+// Keep uploaded files in memory first.
+// requestController.js will inspect the actual file contents
+// before saving an approved document to disk.
+const storage = multer.memoryStorage();
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => {
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${uniqueSuffix}${path.extname(file.originalname)}`);
-  },
-});
+const allowedExtensions = [
+  ".pdf",
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".docx",
+];
 
-const allowedTypes = [".pdf", ".jpg", ".jpeg", ".png"];
+const allowedMimeTypes = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+];
 
 const fileFilter = (req, file, cb) => {
-  const ext = path.extname(file.originalname).toLowerCase();
-  if (allowedTypes.includes(ext)) {
-    cb(null, true);
-  } else {
-    cb(new Error("Only PDF, JPG, or PNG files are allowed for verification documents"));
+  const extension = path.extname(file.originalname).toLowerCase();
+
+  // First check the filename extension.
+  if (!allowedExtensions.includes(extension)) {
+    return cb(
+      new Error(
+        "Only PDF, DOCX, JPG, JPEG, or PNG files are allowed for verification documents"
+      )
+    );
   }
+
+  // Basic MIME check from the upload.
+  // The controller performs the stronger file-signature check.
+  if (!allowedMimeTypes.includes(file.mimetype)) {
+    return cb(
+      new Error(
+        "Invalid document type. Only PDF, DOCX, JPG, JPEG, or PNG files are allowed"
+      )
+    );
+  }
+
+  cb(null, true);
 };
 
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+
+  limits: {
+    // Maximum document size: 5 MB
+    fileSize: 5 * 1024 * 1024,
+
+    // Only one verification document per request
+    files: 1,
+  },
 });
 
 module.exports = upload;

@@ -7,63 +7,77 @@ const requestSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+
     bloodGroup: {
       type: String,
       enum: ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"],
       required: true,
     },
+
     hospital: {
       type: String,
       required: true,
       trim: true,
     },
+
     city: {
       type: String,
       required: true,
       trim: true,
       index: true,
     },
+
     unitsNeeded: {
       type: Number,
       required: true,
       min: 1,
     },
+
     urgency: {
       type: String,
       enum: ["low", "medium", "critical"],
       default: "medium",
     },
+
     status: {
-    type: String,
-    enum: ["open", "fulfilled", "cancelled", "expired", "removed"],
-    default: "open",
-    index: true,
+      type: String,
+      enum: ["open", "fulfilled", "cancelled", "expired", "removed"],
+      default: "open",
+      index: true,
     },
-    // Pinpoint location dropped by the requester on the map, used for
-    // distance-based search/display alongside the free-text city field.
+
     location: {
-      lat: { type: Number, required: true },
-      lng: { type: Number, required: true },
+      lat: {
+        type: Number,
+        required: true,
+      },
+      lng: {
+        type: Number,
+        required: true,
+      },
     },
-    // Path to the uploaded hospital document (prescription, admission
-    // slip, etc.) that proves the request is genuine. Requests go live
-    // immediately — there's no admin approval step. Instead, the
-    // community can report a request; once reportCount hits the
-    // threshold (see REPORT_THRESHOLD below), it's auto-removed.
+
+    // Hospital verification document.
+    // It is required by the controller when a request is created.
+    // After a request is fulfilled/cancelled, the physical document is
+    // deleted and this field is cleared.
     verificationDocument: {
       type: String,
-      required: true,
+      default: null,
     },
+
     reportCount: {
       type: Number,
       default: 0,
     },
+
     reportedBy: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
       },
     ],
+
     respondedDonors: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -74,9 +88,13 @@ const requestSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-requestSchema.index({ bloodGroup: 1, city: 1, status: 1 });
+requestSchema.index({
+  bloodGroup: 1,
+  city: 1,
+  status: 1,
+});
 
-// Number of community reports at which a request is automatically removed
+// Number of unique community reports required to remove a request
 const REPORT_THRESHOLD = 10;
 
 module.exports = mongoose.model("Request", requestSchema);
