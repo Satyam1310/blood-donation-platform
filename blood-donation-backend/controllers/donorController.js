@@ -1,6 +1,15 @@
 const DonorProfile = require("../models/DonorProfile");
 const DonationHistory = require("../models/DonationHistory");
 
+const calculateAvailability = (lastDonationDate) => {
+  if (!lastDonationDate) return true;
+
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  return new Date(lastDonationDate) <= thirtyDaysAgo;
+};
+
 // @route GET /api/donors/me
 const getMyProfile = async (req, res) => {
   try {
@@ -114,6 +123,7 @@ const addDonationRecord = async (req, res) => {
     // Keep the donor profile's lastDonationDate in sync (only if this is the most recent)
     if (profile && (!profile.lastDonationDate || new Date(date) > profile.lastDonationDate)) {
       profile.lastDonationDate = date;
+      profile.isAvailable = calculateAvailability(date);
       await profile.save();
     }
 
@@ -145,10 +155,15 @@ const updateDonationRecord = async (req, res) => {
 
     // Re-sync lastDonationDate in case the edited date changed which record is most recent
     const mostRecent = await DonationHistory.findOne({ donor: req.user._id }).sort({ date: -1 });
+    const latestDonationDate = mostRecent ? mostRecent.date : null;
+
     await DonorProfile.findOneAndUpdate(
-      { user: req.user._id },
-      { lastDonationDate: mostRecent ? mostRecent.date : null }
-    );
+    { user: req.user._id },
+    {
+      lastDonationDate: latestDonationDate,
+      isAvailable: calculateAvailability(latestDonationDate),
+    }
+  );
 
     res.status(200).json({ record });
   } catch (error) {
@@ -172,9 +187,15 @@ const deleteDonationRecord = async (req, res) => {
 
     // Re-sync lastDonationDate now that a record is gone
     const mostRecent = await DonationHistory.findOne({ donor: req.user._id }).sort({ date: -1 });
+
+    const latestDonationDate = mostRecent ? mostRecent.date : null;
+
     await DonorProfile.findOneAndUpdate(
-      { user: req.user._id },
-      { lastDonationDate: mostRecent ? mostRecent.date : null }
+    { user: req.user._id },
+    {
+      lastDonationDate: latestDonationDate,
+      isAvailable: calculateAvailability(latestDonationDate),
+    }
     );
 
     res.status(200).json({ message: "Donation record deleted" });
