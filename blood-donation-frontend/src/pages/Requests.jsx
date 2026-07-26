@@ -19,8 +19,12 @@ export default function Requests() {
 
   const loadRequests = async () => {
     setLoading(true);
+
     try {
-      const res = await api.get("/requests", { params: { status: "open" } });
+      const res = await api.get("/requests", {
+        params: { status: "open" },
+      });
+
       setRequests(res.data.requests);
     } catch (err) {
       console.error(err);
@@ -45,7 +49,22 @@ export default function Requests() {
   const handleReport = async (id) => {
     try {
       await api.put(`/requests/${id}/report`);
-      setReportedIds((prev) => new Set(prev).add(id));
+
+      setReportedIds((prev) => {
+        const updated = new Set(prev);
+        updated.add(id);
+        return updated;
+      });
+
+      loadRequests();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleStatusUpdate = async (id, status) => {
+    try {
+      await api.put(`/requests/${id}/status`, { status });
       loadRequests();
     } catch (err) {
       console.error(err);
@@ -56,12 +75,17 @@ export default function Requests() {
     <div className="max-w-4xl mx-auto px-6 py-16">
       <div className="flex items-start justify-between flex-wrap gap-4 mb-10">
         <div>
-          <h1 className="font-display text-3xl text-ink mb-1">Open requests</h1>
+          <h1 className="font-display text-3xl text-ink mb-1">
+            Open requests
+          </h1>
+
           <p className="text-ink-soft">
-            Patients and hospitals currently looking for donors. Moderation here is
-            public — if a request gets {REPORT_THRESHOLD} reports it's automatically taken down.
+            Patients and hospitals currently looking for donors. Moderation
+            here is public — if a request gets {REPORT_THRESHOLD} reports
+            it's automatically taken down.
           </p>
         </div>
+
         {user && (
           <Link
             to="/start-request"
@@ -73,57 +97,122 @@ export default function Requests() {
       </div>
 
       {loading ? (
-        <p className="text-ink-soft font-mono text-sm">Loading requests…</p>
+        <p className="text-ink-soft font-mono text-sm">
+          Loading requests…
+        </p>
       ) : requests.length === 0 ? (
-        <p className="text-ink-soft">No open requests right now.</p>
+        <p className="text-ink-soft">
+          No open requests right now.
+        </p>
       ) : (
         <div className="space-y-4">
           {requests.map((r) => {
-            const isOwnRequest = user && r.requester?._id === user.id;
-            const alreadyReported = reportedIds.has(r._id) || r.reportedBy?.includes(user?.id);
+            // Auth responses can contain either `id` or `_id`.
+            const userId = user?.id || user?._id;
+
+            const requesterId =
+              r.requester?._id || r.requester?.id || r.requester;
+
+            const isOwnRequest =
+              Boolean(userId && requesterId) &&
+              userId.toString() === requesterId.toString();
+
+            const alreadyReported =
+              reportedIds.has(r._id) ||
+              r.reportedBy?.some(
+                (reportedUserId) =>
+                  reportedUserId?.toString() === userId?.toString()
+              );
+
+            const alreadyResponded =
+              r.respondedDonors?.some(
+                (donorId) =>
+                  donorId?.toString() === userId?.toString()
+              );
 
             return (
-              <div key={r._id} className="p-5 border border-line rounded-2xl bg-white">
+              <div
+                key={r._id}
+                className="p-5 border border-line rounded-2xl bg-white"
+              >
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className="flex items-center gap-3 mb-1 flex-wrap">
-                      <span className="font-mono font-semibold text-crimson">{r.bloodGroup}</span>
+                      <span className="font-mono font-semibold text-crimson">
+                        {r.bloodGroup}
+                      </span>
+
                       <span
                         className={`text-xs font-medium px-2.5 py-1 rounded-full ${
-                          URGENCY_STYLES[r.urgency] || URGENCY_STYLES.medium
+                          URGENCY_STYLES[r.urgency] ||
+                          URGENCY_STYLES.medium
                         }`}
                       >
                         {r.urgency}
                       </span>
+
                       {r.reportCount > 0 && (
                         <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-line text-ink-soft">
-                          {r.reportCount} report{r.reportCount > 1 ? "s" : ""}
+                          {r.reportCount} report
+                          {r.reportCount > 1 ? "s" : ""}
                         </span>
                       )}
                     </div>
-                    <p className="font-medium text-ink">{r.hospital}</p>
+
+                    <p className="font-medium text-ink">
+                      {r.hospital}
+                    </p>
+
                     <p className="text-sm text-ink-soft">
-                      {r.city} · {r.unitsNeeded} unit{r.unitsNeeded > 1 ? "s" : ""} needed
+                      {r.city} · {r.unitsNeeded} unit
+                      {r.unitsNeeded > 1 ? "s" : ""} needed
                     </p>
                   </div>
 
                   {user && (
                     <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        onClick={() => handleRespond(r._id)}
-                        disabled={r.respondedDonors?.includes(user.id)}
-                        className="px-4 py-2 rounded-full border border-line text-sm font-medium hover:border-crimson hover:text-crimson transition-colors disabled:opacity-50 whitespace-nowrap"
-                      >
-                        {r.respondedDonors?.includes(user.id) ? "Responded" : "I can help"}
-                      </button>
-                      {!isOwnRequest && (
-                        <button
-                          onClick={() => handleReport(r._id)}
-                          disabled={alreadyReported}
-                          className="text-xs font-medium text-ink-soft hover:text-crimson disabled:opacity-50 whitespace-nowrap"
-                        >
-                          {alreadyReported ? "Reported" : "Report"}
-                        </button>
+                      {isOwnRequest ? (
+                        <>
+                          <button
+                            onClick={() =>
+                              handleStatusUpdate(r._id, "fulfilled")
+                            }
+                            className="px-4 py-2 rounded-full border border-line text-sm font-medium hover:border-teal hover:text-teal transition-colors whitespace-nowrap"
+                          >
+                            Mark fulfilled
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              handleStatusUpdate(r._id, "cancelled")
+                            }
+                            className="text-xs font-medium text-ink-soft hover:text-crimson whitespace-nowrap"
+                          >
+                            Cancel request
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleRespond(r._id)}
+                            disabled={alreadyResponded}
+                            className="px-4 py-2 rounded-full border border-line text-sm font-medium hover:border-crimson hover:text-crimson transition-colors disabled:opacity-50 whitespace-nowrap"
+                          >
+                            {alreadyResponded
+                              ? "Responded"
+                              : "I can help"}
+                          </button>
+
+                          <button
+                            onClick={() => handleReport(r._id)}
+                            disabled={alreadyReported}
+                            className="text-xs font-medium text-ink-soft hover:text-crimson disabled:opacity-50 whitespace-nowrap"
+                          >
+                            {alreadyReported
+                              ? "Reported"
+                              : "Report"}
+                          </button>
+                        </>
                       )}
                     </div>
                   )}

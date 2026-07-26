@@ -44,7 +44,12 @@ const getRequests = async (req, res) => {
     const { status, bloodGroup, city } = req.query;
 
     const query = {};
-    if (status) query.status = status;
+
+    if (status) {
+      query.status = status;
+    } else {
+      query.status = "open";
+    }
     if (bloodGroup) query.bloodGroup = bloodGroup;
     if (city) query.city = new RegExp(city, "i");
 
@@ -120,7 +125,7 @@ const respondToRequest = async (req, res) => {
 const updateRequestStatus = async (req, res) => {
   try {
     const { status } = req.body;
-    if (!["open", "fulfilled", "expired"].includes(status)) {
+    if (!["open", "fulfilled", "cancelled", "expired"].includes(status)) {
       return res.status(400).json({ message: "Invalid status value" });
     }
 

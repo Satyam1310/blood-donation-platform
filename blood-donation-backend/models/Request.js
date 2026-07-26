@@ -34,10 +34,10 @@ const requestSchema = new mongoose.Schema(
       default: "medium",
     },
     status: {
-      type: String,
-      enum: ["open", "fulfilled", "expired", "removed"],
-      default: "open",
-      index: true,
+    type: String,
+    enum: ["open", "fulfilled", "cancelled", "expired", "removed"],
+    default: "open",
+    index: true,
     },
     // Pinpoint location dropped by the requester on the map, used for
     // distance-based search/display alongside the free-text city field.
