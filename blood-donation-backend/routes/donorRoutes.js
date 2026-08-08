@@ -1,6 +1,8 @@
 const express = require("express");
+
 const {
   getMyProfile,
+  getPublicDonorProfile,
   updateMyProfile,
   searchDonors,
   addDonationRecord,
@@ -8,18 +10,26 @@ const {
   deleteDonationRecord,
   getMyDonationHistory,
 } = require("../controllers/donorController");
+
 const { protect } = require("../middleware/auth");
 
 const router = express.Router();
 
-// Public search — anyone can search for donors
-router.get("/search", searchDonors);
-
-// Everything below requires a logged-in user
+// All donor information requires authentication
 router.use(protect);
 
+// Donor search
+router.get("/search", searchDonors);
+
+// Own profile
+// Must come before /:id
 router.get("/me", getMyProfile);
 router.put("/me", updateMyProfile);
+
+// Individual donor public profile
+router.get("/:id", getPublicDonorProfile);
+
+// Donation history
 router.post("/history", addDonationRecord);
 router.get("/history", getMyDonationHistory);
 router.put("/history/:id", updateDonationRecord);

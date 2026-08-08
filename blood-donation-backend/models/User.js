@@ -8,6 +8,7 @@ const userSchema = new mongoose.Schema(
       required: [true, "Name is required"],
       trim: true,
     },
+
     email: {
       type: String,
       required: [true, "Email is required"],
@@ -15,19 +16,40 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
+
     password: {
       type: String,
       required: [true, "Password is required"],
       minlength: 6,
-      select: false, // never return password by default
+      select: false,
     },
+
+    // Kept for future phone verification.
+    // Phone verification is not implemented in V2 yet.
     phone: {
       type: String,
       trim: true,
     },
-    // "recipient" is no longer a separate role — any donor can start a
-    // blood request themselves from their own dashboard. "hospital" is
-    // kept for organization accounts; "admin" verifies request documents.
+
+    // Email verification
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+
+    emailVerificationTokenHash: {
+      type: String,
+      default: null,
+      select: false,
+    },
+
+    emailVerificationExpires: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+
+    // "recipient" is no longer a separate role.
     role: {
       type: String,
       enum: ["donor", "hospital", "admin"],
@@ -40,12 +62,14 @@ const userSchema = new mongoose.Schema(
 // Hash password before saving
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
+
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
+
   next();
 });
 
-// Instance method to compare passwords
+// Compare passwords
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };

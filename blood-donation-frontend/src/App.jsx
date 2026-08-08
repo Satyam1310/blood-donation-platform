@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
+
 import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -8,6 +9,7 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
 import SearchDonors from "./pages/SearchDonors";
+import DonorProfile from "./pages/DonorProfile";
 import Requests from "./pages/Requests";
 import StartRequest from "./pages/StartRequest";
 import Benefits from "./pages/Benefits";
@@ -19,15 +21,37 @@ export default function App() {
       <AuthProvider>
         <div className="min-h-screen flex flex-col">
           <Navbar />
+
           <main className="flex-1">
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
-              <Route path="/search" element={<SearchDonors />} />
+
+              {/* Donor search requires login */}
+              <Route
+                path="/search"
+                element={
+                  <ProtectedRoute>
+                    <SearchDonors />
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Individual donor profile requires login */}
+              <Route
+                path="/donors/:id"
+                element={
+                  <ProtectedRoute>
+                    <DonorProfile />
+                  </ProtectedRoute>
+                }
+              />
+
               <Route path="/requests" element={<Requests />} />
               <Route path="/benefits" element={<Benefits />} />
               <Route path="/myths" element={<Myths />} />
+
               <Route
                 path="/dashboard"
                 element={
@@ -36,6 +60,7 @@ export default function App() {
                   </ProtectedRoute>
                 }
               />
+
               <Route
                 path="/start-request"
                 element={
