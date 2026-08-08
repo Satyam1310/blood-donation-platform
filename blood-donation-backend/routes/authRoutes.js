@@ -7,6 +7,7 @@ const {
   getMe,
   sendEmailVerification,
   verifyEmail,
+  updatePrivacySettings,
 } = require("../controllers/authController");
 
 const { protect } = require("../middleware/auth");
@@ -30,12 +31,14 @@ const verificationLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: {
-    message: "Too many verification attempts. Please try again later.",
+    message:
+      "Too many verification attempts. Please try again later.",
   },
 });
 
 router.post("/signup", authLimiter, signup);
 router.post("/login", authLimiter, login);
+
 router.get("/me", protect, getMe);
 
 // Email verification
@@ -51,6 +54,13 @@ router.post(
   protect,
   verificationLimiter,
   verifyEmail
+);
+
+// Contact privacy settings
+router.put(
+  "/privacy",
+  protect,
+  updatePrivacySettings
 );
 
 module.exports = router;

@@ -5,6 +5,7 @@ const {
   getRequests,
   getMyRequests,
   respondToRequest,
+  withdrawResponse,
   updateRequestStatus,
   deleteRequest,
   reportRequest,
@@ -33,13 +34,16 @@ router.post(
   createRequest
 );
 
-// Respond to an active request.
+// I Can Donate.
 router.put("/:id/respond", respondToRequest);
+
+// Withdraw I Can Donate.
+router.delete("/:id/respond", withdrawResponse);
 
 // Update own request status.
 router.put("/:id/status", updateRequestStatus);
 
-// Delete a finished request from My Requests.
+// Delete a finished request.
 router.delete("/:id", deleteRequest);
 
 // Report someone else's request.

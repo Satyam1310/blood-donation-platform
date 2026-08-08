@@ -1,4 +1,5 @@
 const Request = require("../models/Request");
+const DonorProfile = require("../models/DonorProfile");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -17,21 +18,28 @@ const ALLOWED_FILE_TYPES = {
     extensions: [".pdf"],
     saveExtension: ".pdf",
   },
+
   "image/jpeg": {
     extensions: [".jpg", ".jpeg"],
     saveExtension: ".jpg",
   },
+
   "image/png": {
     extensions: [".png"],
     saveExtension: ".png",
   },
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
-    extensions: [".docx"],
-    saveExtension: ".docx",
-  },
+
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+    {
+      extensions: [".docx"],
+      saveExtension: ".docx",
+    },
 };
 
-// Validate the actual bytes of the uploaded file.
+// ---------------------------------------------------------
+// DOCUMENT HELPERS
+// ---------------------------------------------------------
+
 const validateDocument = async (file) => {
   if (!file?.buffer) {
     return {
@@ -41,16 +49,20 @@ const validateDocument = async (file) => {
   }
 
   const { fileTypeFromBuffer } = await import("file-type");
-  const detectedType = await fileTypeFromBuffer(file.buffer);
+
+  const detectedType =
+    await fileTypeFromBuffer(file.buffer);
 
   if (!detectedType) {
     return {
       valid: false,
-      message: "Unable to verify the actual document type",
+      message:
+        "Unable to verify the actual document type",
     };
   }
 
-  const allowedType = ALLOWED_FILE_TYPES[detectedType.mime];
+  const allowedType =
+    ALLOWED_FILE_TYPES[detectedType.mime];
 
   if (!allowedType) {
     return {
@@ -64,7 +76,11 @@ const validateDocument = async (file) => {
     .extname(file.originalname)
     .toLowerCase();
 
-  if (!allowedType.extensions.includes(originalExtension)) {
+  if (
+    !allowedType.extensions.includes(
+      originalExtension
+    )
+  ) {
     return {
       valid: false,
       message:
@@ -78,12 +94,21 @@ const validateDocument = async (file) => {
   };
 };
 
-// Save only after the file has passed validation.
-const saveDocument = async (file, extension) => {
+const saveDocument = async (
+  file,
+  extension
+) => {
   const filename = `${Date.now()}-${crypto.randomUUID()}${extension}`;
-  const absolutePath = path.join(uploadDir, filename);
 
-  await fs.promises.writeFile(absolutePath, file.buffer);
+  const absolutePath = path.join(
+    uploadDir,
+    filename
+  );
+
+  await fs.promises.writeFile(
+    absolutePath,
+    file.buffer
+  );
 
   return {
     filename,
@@ -92,21 +117,119 @@ const saveDocument = async (file, extension) => {
   };
 };
 
-// Delete a verification document safely.
-const deleteVerificationDocument = async (documentPath) => {
+const deleteVerificationDocument = async (
+  documentPath
+) => {
   if (!documentPath) return;
 
-  const filename = path.basename(documentPath);
-  const absolutePath = path.join(uploadDir, filename);
+  const filename =
+    path.basename(documentPath);
+
+  const absolutePath = path.join(
+    uploadDir,
+    filename
+  );
 
   try {
-    await fs.promises.unlink(absolutePath);
+    await fs.promises.unlink(
+      absolutePath
+    );
   } catch (error) {
     if (error.code !== "ENOENT") {
       throw error;
     }
   }
 };
+
+// ---------------------------------------------------------
+// BLOOD COMPATIBILITY
+// ---------------------------------------------------------
+
+/*
+  Donor blood group -> recipient/request blood group.
+
+  This is an application-level compatibility check only.
+  Final transfusion compatibility and medical eligibility
+  must be confirmed by the blood bank / medical professional.
+*/
+
+const COMPATIBLE_DONOR_GROUPS = {
+  "A+": ["A+", "O+"],
+
+  "A-": ["A-", "O-"],
+
+  "B+": ["B+", "O+"],
+
+  "B-": ["B-", "O-"],
+
+  "AB+": [
+    "A+",
+    "A-",
+    "B+",
+    "B-",
+    "AB+",
+    "AB-",
+    "O+",
+    "O-",
+  ],
+
+  "AB-": [
+    "A-",
+    "B-",
+    "AB-",
+    "O-",
+  ],
+
+  "O+": ["O+"],
+
+  "O-": ["O-"],
+};
+
+const isBloodCompatible = (
+  donorBloodGroup,
+  requestedBloodGroup
+) => {
+  if (
+    !donorBloodGroup ||
+    !requestedBloodGroup
+  ) {
+    return false;
+  }
+
+  return (
+    COMPATIBLE_DONOR_GROUPS[
+      requestedBloodGroup
+    ]?.includes(donorBloodGroup) ||
+    false
+  );
+};
+
+// ---------------------------------------------------------
+// ELIGIBILITY
+// ---------------------------------------------------------
+
+const isEligibleByDonationHistory = (
+  lastDonationDate
+) => {
+  if (!lastDonationDate) {
+    return true;
+  }
+
+  const ninetyDaysAgo = new Date();
+
+  ninetyDaysAgo.setDate(
+    ninetyDaysAgo.getDate() - 90
+  );
+
+  return (
+    new Date(lastDonationDate) <=
+    ninetyDaysAgo
+  );
+};
+
+// ---------------------------------------------------------
+// CREATE REQUEST
+// ---------------------------------------------------------
 
 // @route POST /api/requests
 const createRequest = async (req, res) => {
@@ -163,13 +286,18 @@ const createRequest = async (req, res) => {
       });
     }
 
-    if (!Number.isInteger(units) || units < 1) {
+    if (
+      !Number.isInteger(units) ||
+      units < 1
+    ) {
       return res.status(400).json({
-        message: "Units needed must be at least 1",
+        message:
+          "Units needed must be at least 1",
       });
     }
 
-    const validation = await validateDocument(req.file);
+    const validation =
+      await validateDocument(req.file);
 
     if (!validation.valid) {
       return res.status(400).json({
@@ -182,27 +310,36 @@ const createRequest = async (req, res) => {
       validation.extension
     );
 
-    const request = await Request.create({
-      requester: req.user._id,
-      bloodGroup,
-      hospital,
-      city,
-      unitsNeeded: units,
-      urgency,
-      location: {
-        lat: latitude,
-        lng: longitude,
-      },
-      verificationDocument: savedDocument.publicPath,
-    });
+    const request =
+      await Request.create({
+        requester: req.user._id,
+        bloodGroup,
+        hospital,
+        city,
+        unitsNeeded: units,
+        urgency,
+        location: {
+          lat: latitude,
+          lng: longitude,
+        },
+        verificationDocument:
+          savedDocument.publicPath,
+      });
 
-    res.status(201).json({ request });
+    res.status(201).json({
+      request,
+    });
   } catch (error) {
     if (savedDocument?.absolutePath) {
       try {
-        await fs.promises.unlink(savedDocument.absolutePath);
+        await fs.promises.unlink(
+          savedDocument.absolutePath
+        );
       } catch (cleanupError) {
-        if (cleanupError.code !== "ENOENT") {
+        if (
+          cleanupError.code !==
+          "ENOENT"
+        ) {
           console.error(
             "Failed to clean up uploaded document:",
             cleanupError
@@ -212,34 +349,50 @@ const createRequest = async (req, res) => {
     }
 
     res.status(500).json({
-      message: "Failed to create request",
+      message:
+        "Failed to create request",
       error: error.message,
     });
   }
 };
 
+// ---------------------------------------------------------
+// GET OPEN REQUESTS
+// ---------------------------------------------------------
+
 // @route GET /api/requests
-// Public/active request listing.
-// Only OPEN requests are returned.
 const getRequests = async (req, res) => {
   try {
-    const { bloodGroup, city } = req.query;
+    const {
+      bloodGroup,
+      city,
+    } = req.query;
 
     const query = {
       status: "open",
     };
 
     if (bloodGroup) {
-      query.bloodGroup = bloodGroup;
+      query.bloodGroup =
+        bloodGroup;
     }
 
     if (city) {
-      query.city = new RegExp(city.trim(), "i");
+      query.city = new RegExp(
+        city.trim(),
+        "i"
+      );
     }
 
-    const requests = await Request.find(query)
-      .populate("requester", "name email")
-      .sort({ createdAt: -1 });
+    const requests =
+      await Request.find(query)
+        .populate(
+          "requester",
+          "name email"
+        )
+        .sort({
+          createdAt: -1,
+        });
 
     res.status(200).json({
       count: requests.length,
@@ -247,16 +400,27 @@ const getRequests = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({
-      message: "Failed to fetch requests",
+      message:
+        "Failed to fetch requests",
       error: error.message,
     });
   }
 };
 
+// ---------------------------------------------------------
+// REPORT REQUEST
+// ---------------------------------------------------------
+
 // @route PUT /api/requests/:id/report
-const reportRequest = async (req, res) => {
+const reportRequest = async (
+  req,
+  res
+) => {
   try {
-    const request = await Request.findById(req.params.id);
+    const request =
+      await Request.findById(
+        req.params.id
+      );
 
     if (!request) {
       return res.status(404).json({
@@ -269,26 +433,33 @@ const reportRequest = async (req, res) => {
       req.user._id.toString()
     ) {
       return res.status(400).json({
-        message: "You can't report your own request",
+        message:
+          "You can't report your own request",
       });
     }
 
     if (
       request.reportedBy.some(
         (id) =>
-          id.toString() === req.user._id.toString()
+          id.toString() ===
+          req.user._id.toString()
       )
     ) {
       return res.status(409).json({
-        message: "You've already reported this request",
+        message:
+          "You've already reported this request",
       });
     }
 
-    request.reportedBy.push(req.user._id);
+    request.reportedBy.push(
+      req.user._id
+    );
+
     request.reportCount += 1;
 
     if (
-      request.reportCount >= Request.REPORT_THRESHOLD &&
+      request.reportCount >=
+        Request.REPORT_THRESHOLD &&
       request.status === "open"
     ) {
       request.status = "removed";
@@ -296,19 +467,32 @@ const reportRequest = async (req, res) => {
 
     await request.save();
 
-    res.status(200).json({ request });
+    res.status(200).json({
+      request,
+    });
   } catch (error) {
     res.status(500).json({
-      message: "Failed to report request",
+      message:
+        "Failed to report request",
       error: error.message,
     });
   }
 };
 
+// ---------------------------------------------------------
+// I CAN DONATE
+// ---------------------------------------------------------
+
 // @route PUT /api/requests/:id/respond
-const respondToRequest = async (req, res) => {
+const respondToRequest = async (
+  req,
+  res
+) => {
   try {
-    const request = await Request.findById(req.params.id);
+    const request =
+      await Request.findById(
+        req.params.id
+      );
 
     if (!request) {
       return res.status(404).json({
@@ -318,32 +502,176 @@ const respondToRequest = async (req, res) => {
 
     if (request.status !== "open") {
       return res.status(400).json({
-        message: "This request is no longer open",
+        message:
+          "You can only respond to an open blood request",
+      });
+    }
+
+    if (
+      request.requester.toString() ===
+      req.user._id.toString()
+    ) {
+      return res.status(400).json({
+        message:
+          "You cannot respond to your own blood request",
+      });
+    }
+
+    const donorProfile =
+      await DonorProfile.findOne({
+        user: req.user._id,
+      });
+
+    if (!donorProfile) {
+      return res.status(400).json({
+        message:
+          "Complete your donor profile before offering to donate",
+      });
+    }
+
+    if (!donorProfile.bloodGroup) {
+      return res.status(400).json({
+        message:
+          "Your blood group is required before you can offer to donate",
+      });
+    }
+
+    const eligible =
+      isEligibleByDonationHistory(
+        donorProfile.lastDonationDate
+      );
+
+    if (!eligible) {
+      return res.status(400).json({
+        message:
+          "You are not yet eligible to donate. Donors must wait 90 days after their last donation.",
+      });
+    }
+
+    const compatible =
+      isBloodCompatible(
+        donorProfile.bloodGroup,
+        request.bloodGroup
+      );
+
+    if (!compatible) {
+      return res.status(400).json({
+        message:
+          "Your blood group is not compatible with this request",
       });
     }
 
     const alreadyResponded =
       request.respondedDonors.some(
-        (id) =>
-          id.toString() === req.user._id.toString()
+        (response) =>
+          response.donor.toString() ===
+          req.user._id.toString()
       );
 
-    if (!alreadyResponded) {
-      request.respondedDonors.push(req.user._id);
-      await request.save();
+    if (alreadyResponded) {
+      return res.status(409).json({
+        message:
+          "You have already offered to donate for this request",
+      });
     }
 
-    res.status(200).json({ request });
+    request.respondedDonors.push({
+      donor: req.user._id,
+      respondedAt: new Date(),
+    });
+
+    await request.save();
+
+    res.status(200).json({
+      message:
+        "I Can Donate response submitted successfully",
+
+      medicalDisclaimer:
+        "Final donation eligibility and transfusion compatibility must be confirmed by the blood bank or a qualified medical professional.",
+
+      request,
+    });
   } catch (error) {
     res.status(500).json({
-      message: "Failed to respond to request",
+      message:
+        "Failed to respond to request",
       error: error.message,
     });
   }
 };
 
+// ---------------------------------------------------------
+// WITHDRAW I CAN DONATE
+// ---------------------------------------------------------
+
+// @route DELETE /api/requests/:id/respond
+const withdrawResponse = async (
+  req,
+  res
+) => {
+  try {
+    const request =
+      await Request.findById(
+        req.params.id
+      );
+
+    if (!request) {
+      return res.status(404).json({
+        message: "Request not found",
+      });
+    }
+
+    if (request.status !== "open") {
+      return res.status(400).json({
+        message:
+          "You cannot withdraw a response after the request is no longer open",
+      });
+    }
+
+    const responseIndex =
+      request.respondedDonors.findIndex(
+        (response) =>
+          response.donor.toString() ===
+          req.user._id.toString()
+      );
+
+    if (responseIndex === -1) {
+      return res.status(404).json({
+        message:
+          "You have not responded to this request",
+      });
+    }
+
+    request.respondedDonors.splice(
+      responseIndex,
+      1
+    );
+
+    await request.save();
+
+    res.status(200).json({
+      message:
+        "Your donation response has been withdrawn",
+      request,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message:
+        "Failed to withdraw donation response",
+      error: error.message,
+    });
+  }
+};
+
+// ---------------------------------------------------------
+// UPDATE REQUEST STATUS
+// ---------------------------------------------------------
+
 // @route PUT /api/requests/:id/status
-const updateRequestStatus = async (req, res) => {
+const updateRequestStatus = async (
+  req,
+  res
+) => {
   try {
     const { status } = req.body;
 
@@ -356,11 +684,15 @@ const updateRequestStatus = async (req, res) => {
       ].includes(status)
     ) {
       return res.status(400).json({
-        message: "Invalid status value",
+        message:
+          "Invalid status value",
       });
     }
 
-    const request = await Request.findById(req.params.id);
+    const request =
+      await Request.findById(
+        req.params.id
+      );
 
     if (!request) {
       return res.status(404).json({
@@ -378,11 +710,13 @@ const updateRequestStatus = async (req, res) => {
       });
     }
 
-    // A completed request cannot be reopened.
     if (
-      ["fulfilled", "cancelled", "expired", "removed"].includes(
-        request.status
-      )
+      [
+        "fulfilled",
+        "cancelled",
+        "expired",
+        "removed",
+      ].includes(request.status)
     ) {
       return res.status(400).json({
         message:
@@ -390,68 +724,230 @@ const updateRequestStatus = async (req, res) => {
       });
     }
 
-    // Only an open request can be changed to fulfilled
-    // or cancelled.
-    if (!["fulfilled", "cancelled"].includes(status)) {
+    if (
+      ![
+        "fulfilled",
+        "cancelled",
+      ].includes(status)
+    ) {
       return res.status(400).json({
         message:
           "An open request can only be fulfilled or cancelled",
       });
     }
 
-    // When fulfilled/cancelled, remove the sensitive
-    // hospital document from disk.
     if (
-      ["fulfilled", "cancelled"].includes(status) &&
+      ["fulfilled", "cancelled"].includes(
+        status
+      ) &&
       request.verificationDocument
     ) {
       await deleteVerificationDocument(
         request.verificationDocument
       );
 
-      request.verificationDocument = undefined;
+      request.verificationDocument =
+        undefined;
     }
 
     request.status = status;
 
     await request.save();
 
-    res.status(200).json({ request });
+    res.status(200).json({
+      request,
+    });
   } catch (error) {
     res.status(500).json({
-      message: "Failed to update request",
+      message:
+        "Failed to update request",
       error: error.message,
     });
   }
 };
+
+// ---------------------------------------------------------
+// GET MY REQUESTS + RESPONDING DONORS
+// ---------------------------------------------------------
 
 // @route GET /api/requests/my
-// Returns only requests created by the currently logged-in user.
-const getMyRequests = async (req, res) => {
+//
+// IMPORTANT:
+// Only the authenticated requester gets this endpoint.
+// It returns the donors who responded to THEIR requests.
+//
+// Phone/email are intentionally NOT returned here.
+// The frontend must open /api/donors/:id to access the
+// donor's public profile, where privacy settings are enforced.
+const getMyRequests = async (
+  req,
+  res
+) => {
   try {
-    const requests = await Request.find({
-      requester: req.user._id,
-    })
-      .populate("requester", "name email")
-      .sort({ createdAt: -1 });
+    const requests =
+      await Request.find({
+        requester: req.user._id,
+      })
+        .populate(
+          "requester",
+          "name email"
+        )
+        .populate(
+          "respondedDonors.donor",
+          "name"
+        )
+        .sort({
+          createdAt: -1,
+        });
+
+    // ---------------------------------------------
+    // Collect responding donor user IDs
+    // ---------------------------------------------
+
+    const donorUserIds = [];
+
+    requests.forEach((request) => {
+      request.respondedDonors.forEach(
+        (response) => {
+          if (
+            response?.donor?._id
+          ) {
+            donorUserIds.push(
+              response.donor._id
+            );
+          }
+        }
+      );
+    });
+
+    // ---------------------------------------------
+    // Get donor profiles for those users
+    // ---------------------------------------------
+
+    let donorProfiles = [];
+
+    if (donorUserIds.length > 0) {
+      donorProfiles =
+        await DonorProfile.find({
+          user: {
+            $in: donorUserIds,
+          },
+        }).select(
+          "_id user bloodGroup city pincode lastDonationDate isAvailable"
+        );
+    }
+
+    // ---------------------------------------------
+    // Map user ID -> donor profile
+    // ---------------------------------------------
+
+    const profileMap = new Map();
+
+    donorProfiles.forEach(
+      (profile) => {
+        profileMap.set(
+          profile.user.toString(),
+          profile
+        );
+      }
+    );
+
+    // ---------------------------------------------
+    // Build safe response
+    // ---------------------------------------------
+
+    const safeRequests =
+      requests.map((request) => {
+        const requestObject =
+          request.toObject();
+
+        requestObject.respondedDonors =
+          request.respondedDonors.map(
+            (response) => {
+              const donorUser =
+                response.donor;
+
+              if (!donorUser) {
+                return null;
+              }
+
+              const donorProfile =
+                profileMap.get(
+                  donorUser._id.toString()
+                );
+
+              return {
+                donor: {
+                  _id: donorUser._id,
+                  name: donorUser.name,
+
+                  donorProfileId:
+                    donorProfile?._id ||
+                    null,
+
+                  bloodGroup:
+                    donorProfile?.bloodGroup ||
+                    null,
+
+                  city:
+                    donorProfile?.city ||
+                    null,
+
+                  pincode:
+                    donorProfile?.pincode ||
+                    "",
+
+                  lastDonationDate:
+                    donorProfile?.lastDonationDate ||
+                    null,
+
+                  isAvailable:
+                    donorProfile
+                      ? donorProfile.isAvailable
+                      : false,
+                },
+
+                respondedAt:
+                  response.respondedAt,
+              };
+            }
+          );
+
+        requestObject.respondedDonors =
+          requestObject.respondedDonors.filter(
+            Boolean
+          );
+
+        return requestObject;
+      });
 
     res.status(200).json({
-      count: requests.length,
-      requests,
+      count: safeRequests.length,
+      requests: safeRequests,
     });
   } catch (error) {
     res.status(500).json({
-      message: "Failed to fetch your requests",
+      message:
+        "Failed to fetch your requests",
       error: error.message,
     });
   }
 };
 
+// ---------------------------------------------------------
+// DELETE FINISHED REQUEST
+// ---------------------------------------------------------
+
 // @route DELETE /api/requests/:id
-// Only the owner can delete a finished request.
-const deleteRequest = async (req, res) => {
+const deleteRequest = async (
+  req,
+  res
+) => {
   try {
-    const request = await Request.findById(req.params.id);
+    const request =
+      await Request.findById(
+        req.params.id
+      );
 
     if (!request) {
       return res.status(404).json({
@@ -459,7 +955,6 @@ const deleteRequest = async (req, res) => {
       });
     }
 
-    // Only the requester who created the request can delete it.
     if (
       request.requester.toString() !==
       req.user._id.toString()
@@ -470,7 +965,6 @@ const deleteRequest = async (req, res) => {
       });
     }
 
-    // Active requests cannot be deleted.
     if (request.status === "open") {
       return res.status(400).json({
         message:
@@ -478,8 +972,6 @@ const deleteRequest = async (req, res) => {
       });
     }
 
-    // If a document somehow still exists for a finished
-    // request, clean it up before deleting the database record.
     if (request.verificationDocument) {
       await deleteVerificationDocument(
         request.verificationDocument
@@ -489,11 +981,13 @@ const deleteRequest = async (req, res) => {
     await request.deleteOne();
 
     res.status(200).json({
-      message: "Request deleted successfully",
+      message:
+        "Request deleted successfully",
     });
   } catch (error) {
     res.status(500).json({
-      message: "Failed to delete request",
+      message:
+        "Failed to delete request",
       error: error.message,
     });
   }
@@ -504,6 +998,7 @@ module.exports = {
   getRequests,
   getMyRequests,
   respondToRequest,
+  withdrawResponse,
   updateRequestStatus,
   deleteRequest,
   reportRequest,

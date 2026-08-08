@@ -25,8 +25,16 @@ export default function App() {
           <main className="flex-1">
             <Routes>
               <Route path="/" element={<Home />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/signup" element={<Signup />} />
+
+              <Route
+                path="/login"
+                element={<Login />}
+              />
+
+              <Route
+                path="/signup"
+                element={<Signup />}
+              />
 
               {/* Donor search requires login */}
               <Route
@@ -48,10 +56,23 @@ export default function App() {
                 }
               />
 
-              <Route path="/requests" element={<Requests />} />
-              <Route path="/benefits" element={<Benefits />} />
-              <Route path="/myths" element={<Myths />} />
+              {/* Blood requests */}
+              <Route
+                path="/requests"
+                element={<Requests />}
+              />
 
+              <Route
+                path="/benefits"
+                element={<Benefits />}
+              />
+
+              <Route
+                path="/myths"
+                element={<Myths />}
+              />
+
+              {/* Dashboard */}
               <Route
                 path="/dashboard"
                 element={
@@ -61,6 +82,7 @@ export default function App() {
                 }
               />
 
+              {/* Create blood request */}
               <Route
                 path="/start-request"
                 element={

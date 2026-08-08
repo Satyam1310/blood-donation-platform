@@ -1,5 +1,23 @@
 const mongoose = require("mongoose");
 
+const responseSchema = new mongoose.Schema(
+  {
+    donor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+
+    respondedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  {
+    _id: false,
+  }
+);
+
 const requestSchema = new mongoose.Schema(
   {
     requester: {
@@ -10,7 +28,16 @@ const requestSchema = new mongoose.Schema(
 
     bloodGroup: {
       type: String,
-      enum: ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"],
+      enum: [
+        "A+",
+        "A-",
+        "B+",
+        "B-",
+        "AB+",
+        "AB-",
+        "O+",
+        "O-",
+      ],
       required: true,
     },
 
@@ -41,7 +68,13 @@ const requestSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["open", "fulfilled", "cancelled", "expired", "removed"],
+      enum: [
+        "open",
+        "fulfilled",
+        "cancelled",
+        "expired",
+        "removed",
+      ],
       default: "open",
       index: true,
     },
@@ -58,9 +91,8 @@ const requestSchema = new mongoose.Schema(
     },
 
     // Hospital verification document.
-    // It is required by the controller when a request is created.
-    // After a request is fulfilled/cancelled, the physical document is
-    // deleted and this field is cleared.
+    // Required when creating a request.
+    // Removed when request is fulfilled/cancelled.
     verificationDocument: {
       type: String,
       default: null,
@@ -78,14 +110,12 @@ const requestSchema = new mongoose.Schema(
       },
     ],
 
-    respondedDonors: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-      },
-    ],
+    // Donors who currently want to donate for this request.
+    respondedDonors: [responseSchema],
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
 requestSchema.index({
@@ -94,7 +124,7 @@ requestSchema.index({
   status: 1,
 });
 
-// Number of unique community reports required to remove a request
+// Number of unique community reports required to remove a request.
 const REPORT_THRESHOLD = 10;
 
 module.exports = mongoose.model("Request", requestSchema);

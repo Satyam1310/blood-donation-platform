@@ -54,22 +54,18 @@ export default function DonorProfile() {
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto px-6 py-12">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-line rounded w-1/3" />
-          <div className="h-32 bg-line rounded-2xl" />
-          <div className="h-24 bg-line rounded-2xl" />
-        </div>
+      <div className="max-w-5xl mx-auto px-6 py-20 text-ink-soft font-mono text-sm">
+        Loading donor profile…
       </div>
     );
   }
 
   if (error || !donor) {
     return (
-      <div className="max-w-4xl mx-auto px-6 py-12">
+      <div className="max-w-5xl mx-auto px-6 py-16">
         <button
           onClick={() => navigate(-1)}
-          className="text-sm text-crimson font-medium mb-6"
+          className="text-sm text-crimson font-medium mb-6 hover:underline"
         >
           ← Back
         </button>
@@ -80,15 +76,20 @@ export default function DonorProfile() {
           </h2>
 
           <p className="mt-2 text-ink-soft">
-            {error || "This donor profile could not be found."}
+            {error ||
+              "This donor profile could not be found."}
           </p>
         </div>
       </div>
     );
   }
 
+  const hasPhone = Boolean(donor.phone);
+  const hasEmail = Boolean(donor.email);
+
   return (
-    <div className="max-w-4xl mx-auto px-6 py-10">
+    <div className="max-w-5xl mx-auto px-6 py-16">
+
       {/* Back */}
       <button
         onClick={() => navigate(-1)}
@@ -100,6 +101,7 @@ export default function DonorProfile() {
       {/* Profile header */}
       <section className="bg-white border border-line rounded-3xl p-7 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center gap-5">
+
           {/* Blood group */}
           <div className="w-20 h-20 rounded-full bg-crimson-light text-crimson flex items-center justify-center text-xl font-bold shrink-0">
             {donor.bloodGroup || "—"}
@@ -115,6 +117,7 @@ export default function DonorProfile() {
             </p>
 
             <div className="flex flex-wrap gap-2 mt-3">
+
               <span
                 className={`text-xs font-medium px-3 py-1 rounded-full ${
                   donor.isAvailable
@@ -143,36 +146,103 @@ export default function DonorProfile() {
         </div>
       </section>
 
-      {/* Contact */}
+      {/* Contact + Chat */}
       <section className="mt-6 bg-white border border-line rounded-3xl p-7">
-        <h2 className="text-lg font-semibold text-ink">
-          Contact
-        </h2>
 
-        <div className="mt-4">
-          {donor.email ? (
-            <div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-ink">
+              Contact donor
+            </h2>
+
+            <p className="text-sm text-ink-soft mt-1">
+              Contact options are available according to
+              the donor's privacy settings.
+            </p>
+          </div>
+
+          {/* Future chat button */}
+          <button
+            type="button"
+            onClick={() => {
+              // Chat route will be implemented later.
+              navigate(`/chat/${donor.id}`);
+            }}
+            className="px-5 py-2.5 rounded-full bg-crimson text-white font-medium hover:bg-crimson-dark transition-colors whitespace-nowrap"
+          >
+            Start chat
+          </button>
+        </div>
+
+        <div className="mt-6 grid sm:grid-cols-2 gap-4">
+
+          {/* Phone */}
+          {hasPhone ? (
+            <div className="p-4 border border-line rounded-2xl">
+
+              <p className="text-xs text-ink-soft uppercase tracking-wide">
+                Phone
+              </p>
+
+              <p className="mt-1 font-medium text-ink break-all">
+                {donor.phone}
+              </p>
+
+              <a
+                href={`tel:${donor.phone}`}
+                className="inline-flex mt-3 px-4 py-2 rounded-full border border-line text-sm font-medium text-ink hover:border-teal hover:text-teal transition-colors"
+              >
+                Call donor
+              </a>
+            </div>
+          ) : (
+            <div className="p-4 border border-line rounded-2xl">
+              <p className="text-xs text-ink-soft uppercase tracking-wide">
+                Phone
+              </p>
+
+              <p className="mt-1 text-sm text-ink-soft">
+                Phone number is hidden by the donor.
+              </p>
+            </div>
+          )}
+
+          {/* Email */}
+          {hasEmail ? (
+            <div className="p-4 border border-line rounded-2xl">
+
               <p className="text-xs text-ink-soft uppercase tracking-wide">
                 Verified email
               </p>
 
+              <p className="mt-1 font-medium text-ink break-all">
+                {donor.email}
+              </p>
+
               <a
                 href={`mailto:${donor.email}`}
-                className="text-crimson font-medium hover:underline break-all"
+                className="inline-flex mt-3 px-4 py-2 rounded-full border border-line text-sm font-medium text-ink hover:border-crimson hover:text-crimson transition-colors"
               >
-                {donor.email}
+                Send email
               </a>
             </div>
           ) : (
-            <p className="text-sm text-ink-soft">
-              No verified contact information is available.
-            </p>
+            <div className="p-4 border border-line rounded-2xl">
+              <p className="text-xs text-ink-soft uppercase tracking-wide">
+                Email
+              </p>
+
+              <p className="mt-1 text-sm text-ink-soft">
+                No verified email is available.
+              </p>
+            </div>
           )}
         </div>
       </section>
 
       {/* Donation information */}
       <section className="mt-6 grid sm:grid-cols-2 gap-4">
+
         <div className="bg-white border border-line rounded-2xl p-6">
           <p className="text-sm text-ink-soft">
             Blood group
@@ -214,7 +284,8 @@ export default function DonorProfile() {
             </p>
           ) : (
             <p className="text-base font-semibold text-ink mt-1">
-              Eligible after {formatDate(donor.eligibleByDate)}
+              Eligible after{" "}
+              {formatDate(donor.eligibleByDate)}
             </p>
           )}
         </div>

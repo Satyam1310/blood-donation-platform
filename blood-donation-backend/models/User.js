@@ -37,6 +37,26 @@ const userSchema = new mongoose.Schema(
       default: false,
     },
 
+    // Future phone verification
+    phoneVerified: {
+      type: Boolean,
+      default: true,
+    },
+
+    // Contact privacy settings
+    // Users explicitly control whether their verified
+    // contact information can be shown to other
+    // authenticated users.
+    showPhone: {
+      type: Boolean,
+      default: false,
+    },
+
+    showEmail: {
+      type: Boolean,
+      default: false,
+    },
+
     emailVerificationTokenHash: {
       type: String,
       default: null,
@@ -70,7 +90,9 @@ userSchema.pre("save", async function (next) {
 });
 
 // Compare passwords
-userSchema.methods.comparePassword = async function (candidatePassword) {
+userSchema.methods.comparePassword = async function (
+  candidatePassword
+) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
