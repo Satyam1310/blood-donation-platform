@@ -55,7 +55,8 @@ const validateDocument = async (file) => {
   if (!allowedType) {
     return {
       valid: false,
-      message: "The uploaded file is not a supported verification document",
+      message:
+        "The uploaded file is not a supported verification document",
     };
   }
 
@@ -101,7 +102,6 @@ const deleteVerificationDocument = async (documentPath) => {
   try {
     await fs.promises.unlink(absolutePath);
   } catch (error) {
-    // If the file is already gone, that is fine.
     if (error.code !== "ENOENT") {
       throw error;
     }
@@ -198,8 +198,6 @@ const createRequest = async (req, res) => {
 
     res.status(201).json({ request });
   } catch (error) {
-    // If the file was written but database creation failed,
-    // don't leave an orphaned document on disk.
     if (savedDocument?.absolutePath) {
       try {
         await fs.promises.unlink(savedDocument.absolutePath);
@@ -220,29 +218,27 @@ const createRequest = async (req, res) => {
   }
 };
 
-// @route GET /api/requests?status=&bloodGroup=&city=
+// @route GET /api/requests
+// Public/active request listing.
+// Only OPEN requests are returned.
 const getRequests = async (req, res) => {
   try {
-    const { status, bloodGroup, city } = req.query;
+    const { bloodGroup, city } = req.query;
 
-    const query = {};
-
-    if (status) {
-      query.status = status;
-    } else {
-      query.status = "open";
-    }
+    const query = {
+      status: "open",
+    };
 
     if (bloodGroup) {
       query.bloodGroup = bloodGroup;
     }
 
     if (city) {
-      query.city = new RegExp(city, "i");
+      query.city = new RegExp(city.trim(), "i");
     }
 
     const requests = await Request.find(query)
-      .populate("requester", "name email phone")
+      .populate("requester", "name email")
       .sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -382,8 +378,29 @@ const updateRequestStatus = async (req, res) => {
       });
     }
 
-    // When fulfilled/cancelled, remove the sensitive hospital
-    // document from disk.
+    // A completed request cannot be reopened.
+    if (
+      ["fulfilled", "cancelled", "expired", "removed"].includes(
+        request.status
+      )
+    ) {
+      return res.status(400).json({
+        message:
+          "This request can no longer be updated",
+      });
+    }
+
+    // Only an open request can be changed to fulfilled
+    // or cancelled.
+    if (!["fulfilled", "cancelled"].includes(status)) {
+      return res.status(400).json({
+        message:
+          "An open request can only be fulfilled or cancelled",
+      });
+    }
+
+    // When fulfilled/cancelled, remove the sensitive
+    // hospital document from disk.
     if (
       ["fulfilled", "cancelled"].includes(status) &&
       request.verificationDocument
@@ -392,11 +409,11 @@ const updateRequestStatus = async (req, res) => {
         request.verificationDocument
       );
 
-      // Remove the stored path as the physical file no longer exists.
       request.verificationDocument = undefined;
     }
 
     request.status = status;
+
     await request.save();
 
     res.status(200).json({ request });
@@ -408,10 +425,86 @@ const updateRequestStatus = async (req, res) => {
   }
 };
 
+// @route GET /api/requests/my
+// Returns only requests created by the currently logged-in user.
+const getMyRequests = async (req, res) => {
+  try {
+    const requests = await Request.find({
+      requester: req.user._id,
+    })
+      .populate("requester", "name email")
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      count: requests.length,
+      requests,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to fetch your requests",
+      error: error.message,
+    });
+  }
+};
+
+// @route DELETE /api/requests/:id
+// Only the owner can delete a finished request.
+const deleteRequest = async (req, res) => {
+  try {
+    const request = await Request.findById(req.params.id);
+
+    if (!request) {
+      return res.status(404).json({
+        message: "Request not found",
+      });
+    }
+
+    // Only the requester who created the request can delete it.
+    if (
+      request.requester.toString() !==
+      req.user._id.toString()
+    ) {
+      return res.status(403).json({
+        message:
+          "Only the requester can delete this request",
+      });
+    }
+
+    // Active requests cannot be deleted.
+    if (request.status === "open") {
+      return res.status(400).json({
+        message:
+          "Open requests cannot be deleted. Cancel or fulfill the request first.",
+      });
+    }
+
+    // If a document somehow still exists for a finished
+    // request, clean it up before deleting the database record.
+    if (request.verificationDocument) {
+      await deleteVerificationDocument(
+        request.verificationDocument
+      );
+    }
+
+    await request.deleteOne();
+
+    res.status(200).json({
+      message: "Request deleted successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to delete request",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   createRequest,
   getRequests,
+  getMyRequests,
   respondToRequest,
   updateRequestStatus,
+  deleteRequest,
   reportRequest,
 };
