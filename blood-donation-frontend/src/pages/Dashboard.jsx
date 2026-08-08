@@ -15,8 +15,19 @@ const MILESTONES = [
 const EMPTY_RECORD_FORM = { date: "", hospital: "", location: ""};
 const inputClass = "w-full px-4 py-2.5 rounded-lg border border-line focus:border-crimson outline-none";
 
+const formatName = (name = "") =>
+  name
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
 export default function Dashboard() {
   const [history, setHistory] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -30,6 +41,15 @@ export default function Dashboard() {
   const [showProfileForm, setShowProfileForm] = useState(false);
   const [profileForm, setProfileForm] = useState({ city: "", pincode: "", isAvailable: true });
   const [profileSubmitting, setProfileSubmitting] = useState(false);
+
+  const loadProfile = async () => {
+    try {
+      const res = await api.get("/donors/me");
+      setProfile(res.data.profile);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const loadHistory = async () => {
     setLoading(true);
@@ -58,6 +78,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadHistory();
+    loadProfile();
   }, []);
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
@@ -122,6 +143,7 @@ export default function Dashboard() {
     try {
       await api.put("/donors/me", profileForm);
       setShowProfileForm(false);
+      await loadProfile();
       loadHistory();
     } catch (err) {
       console.error(err);
@@ -143,32 +165,83 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-16">
-      {/* Profile summary — name, blood group, city, availability */}
-      <div className="mb-8 p-6 border border-line rounded-2xl bg-white flex items-start justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full bg-crimson-light text-crimson font-mono font-semibold flex items-center justify-center text-base shrink-0">
-            {history?.donor?.bloodGroup || "—"}
-          </div>
-          <div>
-            <p className="font-display text-xl text-ink">{history?.donor?.name || "Your profile"}</p>
-            <p className="text-sm text-ink-soft">
-              {history?.donor?.city || "No city set"} ·{" "}
-              <span className={history?.donor?.isAvailable ? "text-teal" : "text-ink-soft"}>
-                {history?.donor?.isAvailable ? "Available to donate" : "Not available"}
-              </span>
-            </p>
+      {/* Complete own profile */}
+      <section className="mb-10 overflow-hidden rounded-3xl border border-line bg-white">
+        <div className="px-6 sm:px-8 pt-7 pb-6 border-b border-line">
+          <div className="flex items-start justify-between gap-6 flex-wrap">
+            <div className="flex items-center gap-5">
+              <div className="w-20 h-20 rounded-full bg-crimson-light text-crimson font-display text-2xl font-semibold flex items-center justify-center shrink-0">
+                {(profile?.user?.name || history?.donor?.name || "Y").charAt(0).toUpperCase()}
+              </div>
+
+              <div>
+                <p className="font-mono text-xs uppercase tracking-[0.2em] text-ink-soft mb-1">
+                  Your profile
+                </p>
+                <h1 className="font-display text-3xl sm:text-4xl text-ink leading-tight">
+                  {formatName(profile?.user?.name || history?.donor?.name || "Your profile")}
+                </h1>
+                <p className="mt-1 text-sm sm:text-base text-ink-soft">
+                  {profile?.city || history?.donor?.city || "No city set"}
+                  <span className="mx-2">·</span>
+                  <span className={profile?.isAvailable ? "text-teal font-medium" : "text-ink-soft"}>
+                    {profile?.isAvailable ? "Available to donate" : "Not available"}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setShowProfileForm(!showProfileForm);
+                if (!showProfileForm) loadProfileIntoForm();
+              }}
+              className="px-5 py-2.5 rounded-full border border-line text-sm font-medium hover:border-crimson hover:text-crimson transition-colors"
+            >
+              {showProfileForm ? "Cancel" : "Edit profile"}
+            </button>
           </div>
         </div>
-        <button
-          onClick={() => {
-            setShowProfileForm(!showProfileForm);
-            if (!showProfileForm) loadProfileIntoForm();
-          }}
-          className="px-4 py-2 rounded-full border border-line text-sm font-medium hover:border-ink transition-colors"
-        >
-          {showProfileForm ? "Cancel" : "Edit profile"}
-        </button>
-      </div>
+
+        <div className="px-6 sm:px-8 py-7">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-display text-xl text-ink">Personal details</h2>
+            <span className="font-mono text-xs uppercase tracking-widest text-ink-soft">
+              Profile
+            </span>
+          </div>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-5 rounded-2xl bg-line/30">
+              <p className="text-xs uppercase tracking-widest text-ink-soft mb-2">Email</p>
+              <p className="text-sm sm:text-base font-medium text-ink break-all">
+                {profile?.user?.email || "Not available"}
+              </p>
+            </div>
+
+            <div className="p-5 rounded-2xl bg-line/30">
+              <p className="text-xs uppercase tracking-widest text-ink-soft mb-2">Phone</p>
+              <p className="text-sm sm:text-base font-medium text-ink">
+                {profile?.user?.phone || "Not available"}
+              </p>
+            </div>
+
+            <div className="p-5 rounded-2xl bg-line/30">
+              <p className="text-xs uppercase tracking-widest text-ink-soft mb-2">Blood group</p>
+              <p className="font-mono text-xl font-semibold text-crimson">
+                {profile?.bloodGroup || "—"}
+              </p>
+            </div>
+
+            <div className="p-5 rounded-2xl bg-line/30">
+              <p className="text-xs uppercase tracking-widest text-ink-soft mb-2">Pincode</p>
+              <p className="text-sm sm:text-base font-medium text-ink">
+                {profile?.pincode || "Not set"}
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {showProfileForm && (
         <form
@@ -223,7 +296,10 @@ export default function Dashboard() {
 
       <div className="flex items-start justify-between flex-wrap gap-4 mb-10">
         <div>
-          <h1 className="font-display text-3xl text-ink mb-1">Your donation history</h1>
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-ink-soft mb-2">
+            Your journey
+          </p>
+          <h2 className="font-display text-3xl sm:text-4xl text-ink mb-1">Your donation history</h2>
           <p className="text-ink-soft">Every donation, tracked in one place.</p>
         </div>
         <div className="flex gap-3">
@@ -289,8 +365,8 @@ export default function Dashboard() {
       {/* Eligibility calculator */}
       <div className="mb-10 p-6 border border-line rounded-2xl bg-white flex items-center justify-between flex-wrap gap-4">
         <div>
-          <p className="font-mono text-xs uppercase tracking-widest text-ink-soft mb-1">
-            Next donation
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-ink-soft mb-1">
+            Eligibility
           </p>
           {history?.isEligibleNow || totalDonations === 0 ? (
             <p className="font-display text-2xl text-teal">You're eligible to donate now</p>
@@ -334,7 +410,12 @@ export default function Dashboard() {
 
       {/* Milestone timeline */}
       <div className="mb-12">
-        <h2 className="font-display text-xl text-ink mb-6">Milestones</h2>
+        <div className="mb-6">
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-ink-soft mb-1">
+            Progress
+          </p>
+          <h2 className="font-display text-xl text-ink">Milestones</h2>
+        </div>
         <div className="flex gap-6 overflow-x-auto pb-2">
           {MILESTONES.map((m) => (
             <MilestoneBadge
@@ -350,7 +431,12 @@ export default function Dashboard() {
 
       {/* Donation records list */}
       <div>
-        <h2 className="font-display text-xl text-ink mb-6">Records</h2>
+        <div className="mb-6">
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-ink-soft mb-1">
+            History
+          </p>
+          <h2 className="font-display text-xl text-ink">Donation records</h2>
+        </div>
         {history?.records?.length ? (
           <div className="space-y-3">
             {history.records.map((r) => (
