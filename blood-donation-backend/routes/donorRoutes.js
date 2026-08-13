@@ -26,13 +26,13 @@ router.get("/search", searchDonors);
 router.get("/me", getMyProfile);
 router.put("/me", updateMyProfile);
 
-// Individual donor public profile
-router.get("/:id", getPublicDonorProfile);
-
 // Donation history
 router.post("/history", addDonationRecord);
 router.get("/history", getMyDonationHistory);
 router.put("/history/:id", updateDonationRecord);
 router.delete("/history/:id", deleteDonationRecord);
+
+// Individual donor public profile
+router.get("/:id", getPublicDonorProfile);
 
 module.exports = router;
