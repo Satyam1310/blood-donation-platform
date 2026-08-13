@@ -14,16 +14,20 @@ export default function DonorCard({ donor }) {
     return eligibleDate <= new Date();
   };
 
-  const calculateAvailability = () => {
-    if (!donor.lastDonationDate) {
-      return true;
-    }
+const calculateAvailability = () => {
+  if (!donor.lastDonationDate) {
+    return donor.isAvailable;
+  }
 
-    const availableDate = new Date(donor.lastDonationDate);
-    availableDate.setDate(availableDate.getDate() + 30);
+  const availableDate = new Date(donor.lastDonationDate);
+  availableDate.setDate(availableDate.getDate() + 30);
 
-    return availableDate <= new Date();
-  };
+  if (availableDate > new Date()) {
+    return false;
+  }
+
+  return donor.isAvailable;
+};
 
   const eligible = calculateEligibility();
   const available = calculateAvailability();

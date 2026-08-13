@@ -2,22 +2,70 @@ const DonorProfile = require("../models/DonorProfile");
 const DonationHistory = require("../models/DonationHistory");
 const User = require("../models/User");
 
-const calculateAvailability = (lastDonationDate) => {
-  if (!lastDonationDate) return true;
+// ---------------------------------------------------------
+// AVAILABILITY / ELIGIBILITY HELPERS
+// ---------------------------------------------------------
+
+const calculateAvailability = (
+  lastDonationDate,
+  userAvailability = true
+) => {
+  if (!lastDonationDate) {
+    return userAvailability;
+  }
 
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-  return new Date(lastDonationDate) <= thirtyDaysAgo;
+  if (new Date(lastDonationDate) > thirtyDaysAgo) {
+    return false;
+  }
+
+  return Boolean(userAvailability);
 };
 
 const calculateEligibility = (lastDonationDate) => {
-  if (!lastDonationDate) return true;
+  if (!lastDonationDate) {
+    return true;
+  }
 
   const ninetyDaysAgo = new Date();
   ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
   return new Date(lastDonationDate) <= ninetyDaysAgo;
+};
+
+// ---------------------------------------------------------
+// UPDATE PROFILE AVAILABILITY AFTER DONATION CHANGE
+// ---------------------------------------------------------
+
+const syncDonationStatus = async (userId) => {
+  const profile = await DonorProfile.findOne({
+    user: userId,
+  });
+
+  if (!profile) {
+    return;
+  }
+
+  const mostRecent = await DonationHistory.findOne({
+    donor: userId,
+  }).sort({ date: -1 });
+
+  const latestDonationDate = mostRecent
+    ? mostRecent.date
+    : null;
+
+  profile.lastDonationDate = latestDonationDate;
+
+  // Preserve the user's existing manual availability
+  // preference when possible.
+  profile.isAvailable = calculateAvailability(
+    latestDonationDate,
+    profile.isAvailable
+  );
+
+  await profile.save();
 };
 
 // ---------------------------------------------------------
@@ -40,7 +88,26 @@ const getMyProfile = async (req, res) => {
       });
     }
 
-    res.status(200).json({ profile });
+    // Return calculated availability instead of blindly
+    // trusting the stored value.
+    const actualAvailability = calculateAvailability(
+      profile.lastDonationDate,
+      profile.isAvailable
+    );
+
+    // Return calculated eligibility as well.
+    const isEligible = calculateEligibility(
+      profile.lastDonationDate
+    );
+
+    const profileObject = profile.toObject();
+
+    profileObject.isAvailable = actualAvailability;
+    profileObject.isEligible = isEligible;
+
+    res.status(200).json({
+      profile: profileObject,
+    });
   } catch (error) {
     res.status(500).json({
       message: "Failed to fetch profile",
@@ -54,13 +121,11 @@ const getMyProfile = async (req, res) => {
 // ---------------------------------------------------------
 
 // @route GET /api/donors/:id
-// Authenticated users can view another donor's public profile.
-//
-// Contact information is filtered on the backend.
-// Hidden contact details are NOT returned.
 const getPublicDonorProfile = async (req, res) => {
   try {
-    const profile = await DonorProfile.findById(req.params.id).populate(
+    const profile = await DonorProfile.findById(
+      req.params.id
+    ).populate(
       "user",
       "name email phone emailVerified phoneVerified showEmail showPhone"
     );
@@ -82,14 +147,22 @@ const getPublicDonorProfile = async (req, res) => {
         ? donationRecords[0].date
         : profile.lastDonationDate || null;
 
-    const isAvailable = calculateAvailability(lastDonationDate);
-    const isEligible = calculateEligibility(lastDonationDate);
+    const isAvailable = calculateAvailability(
+      lastDonationDate,
+      profile.isAvailable
+    );
+
+    const isEligible =
+      calculateEligibility(lastDonationDate);
 
     let eligibleByDate = null;
 
     if (!isEligible && lastDonationDate) {
       eligibleByDate = new Date(lastDonationDate);
-      eligibleByDate.setDate(eligibleByDate.getDate() + 90);
+
+      eligibleByDate.setDate(
+        eligibleByDate.getDate() + 90
+      );
     }
 
     const user = profile.user;
@@ -117,12 +190,15 @@ const getPublicDonorProfile = async (req, res) => {
     // Email is returned only when:
     // 1. Email is verified
     // 2. User has enabled showEmail
-    if (user.emailVerified === true && user.showEmail === true) {
+    if (
+      user.emailVerified === true &&
+      user.showEmail === true
+    ) {
       donor.email = user.email;
     }
 
     // Phone is returned only when:
-    // 1. Phone is considered verified
+    // 1. Phone is verified
     // 2. User has enabled showPhone
     // 3. Phone exists
     if (
@@ -164,10 +240,6 @@ const updateMyProfile = async (req, res) => {
       isAvailable,
     } = req.body;
 
-    // -----------------------------------------------------
-    // Find authenticated user
-    // -----------------------------------------------------
-
     const user = await User.findById(req.user._id);
 
     if (!user) {
@@ -177,7 +249,7 @@ const updateMyProfile = async (req, res) => {
     }
 
     // -----------------------------------------------------
-    // Update personal user fields
+    // UPDATE USER FIELDS
     // -----------------------------------------------------
 
     if (name !== undefined) {
@@ -197,13 +269,15 @@ const updateMyProfile = async (req, res) => {
     }
 
     // -----------------------------------------------------
-    // Email change
+    // EMAIL CHANGE
     // -----------------------------------------------------
 
     let emailChanged = false;
 
     if (email !== undefined) {
-      const normalizedEmail = String(email).trim().toLowerCase();
+      const normalizedEmail = String(email)
+        .trim()
+        .toLowerCase();
 
       if (!normalizedEmail) {
         return res.status(400).json({
@@ -211,10 +285,7 @@ const updateMyProfile = async (req, res) => {
         });
       }
 
-      // Only perform the email-change flow when the
-      // supplied email is actually different.
       if (normalizedEmail !== user.email) {
-        // Check whether another account already uses it.
         const existingUser = await User.findOne({
           email: normalizedEmail,
           _id: { $ne: user._id },
@@ -222,20 +293,15 @@ const updateMyProfile = async (req, res) => {
 
         if (existingUser) {
           return res.status(409).json({
-            message: "An account with this email already exists",
+            message:
+              "An account with this email already exists",
           });
         }
 
         user.email = normalizedEmail;
 
-        // -------------------------------------------------
-        // IMPORTANT:
-        // A changed email must be verified again.
-        // -------------------------------------------------
-
         user.emailVerified = false;
 
-        // Remove any previous verification code.
         user.emailVerificationTokenHash = null;
         user.emailVerificationExpires = null;
 
@@ -246,11 +312,13 @@ const updateMyProfile = async (req, res) => {
     await user.save();
 
     // -----------------------------------------------------
-    // Update donor profile
+    // UPDATE DONOR PROFILE
     // -----------------------------------------------------
 
     const profile = await DonorProfile.findOneAndUpdate(
-      { user: req.user._id },
+      {
+        user: req.user._id,
+      },
       {
         ...(bloodGroup !== undefined && {
           bloodGroup,
@@ -265,7 +333,7 @@ const updateMyProfile = async (req, res) => {
         }),
 
         ...(isAvailable !== undefined && {
-          isAvailable,
+          isAvailable: Boolean(isAvailable),
         }),
       },
       {
@@ -278,9 +346,19 @@ const updateMyProfile = async (req, res) => {
       "name email phone emailVerified phoneVerified showEmail showPhone"
     );
 
-    // -----------------------------------------------------
-    // Response
-    // -----------------------------------------------------
+    // Calculate actual availability.
+    const actualAvailability = calculateAvailability(
+      profile.lastDonationDate,
+      profile.isAvailable
+    );
+
+    const profileObject = profile.toObject();
+
+    profileObject.isAvailable = actualAvailability;
+
+    profileObject.isEligible = calculateEligibility(
+      profile.lastDonationDate
+    );
 
     res.status(200).json({
       message: emailChanged
@@ -291,13 +369,13 @@ const updateMyProfile = async (req, res) => {
 
       requiresEmailVerification: emailChanged,
 
-      profile,
+      profile: profileObject,
     });
   } catch (error) {
-    // MongoDB duplicate-key protection for email.
     if (error.code === 11000) {
       return res.status(409).json({
-        message: "An account with this email already exists",
+        message:
+          "An account with this email already exists",
       });
     }
 
@@ -337,12 +415,32 @@ const searchDonors = async (req, res) => {
       query.pincode = pincode;
     }
 
+    // -----------------------------------------------------
+    // AVAILABLE ONLY
+    // -----------------------------------------------------
+    //
+    // A donor is available only if:
+    //
+    // 1. They have no donation history
+    //    OR their latest donation was 30+ days ago
+    //
+    // AND
+    //
+    // 2. Their manual availability toggle is ON.
+    //
     if (availableOnly === "true") {
       const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      thirtyDaysAgo.setDate(
+        thirtyDaysAgo.getDate() - 30
+      );
+
+      query.isAvailable = true;
 
       query.$or = [
-        { lastDonationDate: null },
+        {
+          lastDonationDate: null,
+        },
         {
           lastDonationDate: {
             $lte: thirtyDaysAgo,
@@ -351,13 +449,22 @@ const searchDonors = async (req, res) => {
       ];
     }
 
+    // -----------------------------------------------------
+    // ELIGIBLE ONLY
+    // -----------------------------------------------------
+
     if (eligibleOnly === "true") {
       const ninetyDaysAgo = new Date();
-      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+      ninetyDaysAgo.setDate(
+        ninetyDaysAgo.getDate() - 90
+      );
 
       const eligibilityCondition = {
         $or: [
-          { lastDonationDate: null },
+          {
+            lastDonationDate: null,
+          },
           {
             lastDonationDate: {
               $lte: ninetyDaysAgo,
@@ -368,13 +475,16 @@ const searchDonors = async (req, res) => {
 
       if (query.$or) {
         query.$and = [
-          { $or: query.$or },
+          {
+            $or: query.$or,
+          },
           eligibilityCondition,
         ];
 
         delete query.$or;
       } else {
-        query.$or = eligibilityCondition.$or;
+        query.$or =
+          eligibilityCondition.$or;
       }
     }
 
@@ -382,30 +492,40 @@ const searchDonors = async (req, res) => {
       .populate("user", "name")
       .limit(100);
 
-    const publicDonors = donors.map((donor) => ({
-      _id: donor._id,
+    const publicDonors = donors.map((donor) => {
+      const isAvailable =
+        calculateAvailability(
+          donor.lastDonationDate,
+          donor.isAvailable
+        );
 
-      user: donor.user
-        ? {
-            _id: donor.user._id,
-            name: donor.user.name,
-          }
-        : null,
+      const isEligible =
+        calculateEligibility(
+          donor.lastDonationDate
+        );
 
-      bloodGroup: donor.bloodGroup,
-      city: donor.city,
-      pincode: donor.pincode,
+      return {
+        _id: donor._id,
 
-      isAvailable: calculateAvailability(
-        donor.lastDonationDate
-      ),
+        user: donor.user
+          ? {
+              _id: donor.user._id,
+              name: donor.user.name,
+            }
+          : null,
 
-      lastDonationDate: donor.lastDonationDate,
+        bloodGroup: donor.bloodGroup,
+        city: donor.city,
+        pincode: donor.pincode,
 
-      isEligible: calculateEligibility(
-        donor.lastDonationDate
-      ),
-    }));
+        isAvailable,
+
+        lastDonationDate:
+          donor.lastDonationDate,
+
+        isEligible,
+      };
+    });
 
     res.status(200).json({
       count: publicDonors.length,
@@ -440,6 +560,14 @@ const addDonationRecord = async (req, res) => {
       });
     }
 
+    const donationDate = new Date(date);
+
+    if (Number.isNaN(donationDate.getTime())) {
+      return res.status(400).json({
+        message: "Invalid donation date",
+      });
+    }
+
     const profile = await DonorProfile.findOne({
       user: req.user._id,
     });
@@ -454,10 +582,14 @@ const addDonationRecord = async (req, res) => {
       });
     }
 
-    const dayStart = new Date(date);
+    // -----------------------------------------------------
+    // PREVENT DUPLICATE DONATION ON SAME DATE
+    // -----------------------------------------------------
+
+    const dayStart = new Date(donationDate);
     dayStart.setHours(0, 0, 0, 0);
 
-    const dayEnd = new Date(date);
+    const dayEnd = new Date(donationDate);
     dayEnd.setHours(23, 59, 59, 999);
 
     const existing = await DonationHistory.findOne({
@@ -475,22 +607,38 @@ const addDonationRecord = async (req, res) => {
       });
     }
 
+    // -----------------------------------------------------
+    // CREATE DONATION RECORD
+    // -----------------------------------------------------
+
     const record = await DonationHistory.create({
       donor: req.user._id,
-      date,
+      date: donationDate,
       location,
       hospital,
       unitsGiven: unitsGiven || 1,
       bloodGroup: resolvedBloodGroup,
     });
 
+    // -----------------------------------------------------
+    // UPDATE PROFILE
+    // -----------------------------------------------------
+    //
+    // Only update lastDonationDate when this is the newest
+    // donation.
+    //
+    // A new donation always makes the donor unavailable
+    // for the next 30 days.
+    //
     if (
       profile &&
       (!profile.lastDonationDate ||
-        new Date(date) > profile.lastDonationDate)
+        donationDate > profile.lastDonationDate)
     ) {
-      profile.lastDonationDate = date;
-      profile.isAvailable = calculateAvailability(date);
+      profile.lastDonationDate =
+        donationDate;
+
+      profile.isAvailable = false;
 
       await profile.save();
     }
@@ -511,11 +659,15 @@ const addDonationRecord = async (req, res) => {
 // ---------------------------------------------------------
 
 // @route PUT /api/donors/history/:id
-const updateDonationRecord = async (req, res) => {
+const updateDonationRecord = async (
+  req,
+  res
+) => {
   try {
-    const record = await DonationHistory.findById(
-      req.params.id
-    );
+    const record =
+      await DonationHistory.findById(
+        req.params.id
+      );
 
     if (!record) {
       return res.status(404).json({
@@ -541,7 +693,17 @@ const updateDonationRecord = async (req, res) => {
       bloodGroup,
     } = req.body;
 
-    if (date) record.date = date;
+    if (date !== undefined) {
+      const updatedDate = new Date(date);
+
+      if (Number.isNaN(updatedDate.getTime())) {
+        return res.status(400).json({
+          message: "Invalid donation date",
+        });
+      }
+
+      record.date = updatedDate;
+    }
 
     if (location !== undefined) {
       record.location = location;
@@ -551,39 +713,26 @@ const updateDonationRecord = async (req, res) => {
       record.hospital = hospital;
     }
 
-    if (unitsGiven) {
+    if (unitsGiven !== undefined) {
       record.unitsGiven = unitsGiven;
     }
 
-    if (bloodGroup) {
+    if (bloodGroup !== undefined) {
       record.bloodGroup = bloodGroup;
     }
 
     await record.save();
 
-    const mostRecent = await DonationHistory.findOne({
-      donor: req.user._id,
-    }).sort({ date: -1 });
-
-    const latestDonationDate = mostRecent
-      ? mostRecent.date
-      : null;
-
-    await DonorProfile.findOneAndUpdate(
-      { user: req.user._id },
-      {
-        lastDonationDate: latestDonationDate,
-        isAvailable:
-          calculateAvailability(latestDonationDate),
-      }
-    );
+    // Recalculate latest donation after editing.
+    await syncDonationStatus(req.user._id);
 
     res.status(200).json({
       record,
     });
   } catch (error) {
     res.status(500).json({
-      message: "Failed to update donation record",
+      message:
+        "Failed to update donation record",
       error: error.message,
     });
   }
@@ -594,11 +743,15 @@ const updateDonationRecord = async (req, res) => {
 // ---------------------------------------------------------
 
 // @route DELETE /api/donors/history/:id
-const deleteDonationRecord = async (req, res) => {
+const deleteDonationRecord = async (
+  req,
+  res
+) => {
   try {
-    const record = await DonationHistory.findById(
-      req.params.id
-    );
+    const record =
+      await DonationHistory.findById(
+        req.params.id
+      );
 
     if (!record) {
       return res.status(404).json({
@@ -618,29 +771,16 @@ const deleteDonationRecord = async (req, res) => {
 
     await record.deleteOne();
 
-    const mostRecent = await DonationHistory.findOne({
-      donor: req.user._id,
-    }).sort({ date: -1 });
-
-    const latestDonationDate = mostRecent
-      ? mostRecent.date
-      : null;
-
-    await DonorProfile.findOneAndUpdate(
-      { user: req.user._id },
-      {
-        lastDonationDate: latestDonationDate,
-        isAvailable:
-          calculateAvailability(latestDonationDate),
-      }
-    );
+    // Recalculate latest donation after deletion.
+    await syncDonationStatus(req.user._id);
 
     res.status(200).json({
       message: "Donation record deleted",
     });
   } catch (error) {
     res.status(500).json({
-      message: "Failed to delete donation record",
+      message:
+        "Failed to delete donation record",
       error: error.message,
     });
   }
@@ -651,85 +791,144 @@ const deleteDonationRecord = async (req, res) => {
 // ---------------------------------------------------------
 
 // @route GET /api/donors/history
-const getMyDonationHistory = async (req, res) => {
+const getMyDonationHistory = async (
+  req,
+  res
+) => {
   try {
-    const records = await DonationHistory.find({
-      donor: req.user._id,
-    }).sort({ date: -1 });
+    const records =
+      await DonationHistory.find({
+        donor: req.user._id,
+      }).sort({ date: -1 });
 
-    const profile = await DonorProfile.findOne({
-      user: req.user._id,
-    }).populate(
-      "user",
-      "name email phone emailVerified phoneVerified showEmail showPhone"
-    );
+    const profile =
+      await DonorProfile.findOne({
+        user: req.user._id,
+      }).populate(
+        "user",
+        "name email phone emailVerified phoneVerified showEmail showPhone"
+      );
 
-    const totalDonations = records.length;
+    const totalDonations =
+      records.length;
 
     const estimatedLivesImpacted =
       totalDonations * 3;
 
     const milestones = [
-      { threshold: 1, label: "First Drop" },
-      { threshold: 5, label: "Regular Hero" },
-      { threshold: 10, label: "Lifesaver" },
-      { threshold: 25, label: "Champion Donor" },
-      { threshold: 50, label: "Legend" },
+      {
+        threshold: 1,
+        label: "First Drop",
+      },
+      {
+        threshold: 5,
+        label: "Regular Hero",
+      },
+      {
+        threshold: 10,
+        label: "Lifesaver",
+      },
+      {
+        threshold: 25,
+        label: "Champion Donor",
+      },
+      {
+        threshold: 50,
+        label: "Legend",
+      },
     ];
 
-    const earnedMilestones = milestones.filter(
-      (m) => totalDonations >= m.threshold
-    );
+    const earnedMilestones =
+      milestones.filter(
+        (m) =>
+          totalDonations >=
+          m.threshold
+      );
 
     const nextMilestone =
       milestones.find(
-        (m) => totalDonations < m.threshold
+        (m) =>
+          totalDonations <
+          m.threshold
       ) || null;
 
     let nextEligibleDate = null;
     let isEligibleNow = true;
 
     if (records.length > 0) {
-      const lastDate = new Date(records[0].date);
+      const lastDate = new Date(
+        records[0].date
+      );
 
-      nextEligibleDate = new Date(lastDate);
+      nextEligibleDate =
+        new Date(lastDate);
+
       nextEligibleDate.setDate(
-        nextEligibleDate.getDate() + 90
+        nextEligibleDate.getDate() +
+          90
       );
 
       isEligibleNow =
-        nextEligibleDate <= new Date();
+        nextEligibleDate <=
+        new Date();
     }
+
+    const actualAvailability =
+      profile
+        ? calculateAvailability(
+            profile.lastDonationDate,
+            profile.isAvailable
+          )
+        : true;
 
     res.status(200).json({
       donor: profile
         ? {
-            name: profile.user?.name,
-            bloodGroup: profile.bloodGroup,
+            name:
+              profile.user?.name,
+            bloodGroup:
+              profile.bloodGroup,
             city: profile.city,
-            isAvailable: profile.lastDonationDate
-              ? calculateAvailability(
-                  profile.lastDonationDate
-                )
-              : true,
+
+            isAvailable:
+              actualAvailability,
+
+            isEligible:
+              calculateEligibility(
+                profile.lastDonationDate
+              ),
+
+            lastDonationDate:
+              profile.lastDonationDate,
           }
         : null,
 
       records,
+
       totalDonations,
+
       estimatedLivesImpacted,
+
       earnedMilestones,
+
       nextMilestone,
+
       nextEligibleDate,
+
       isEligibleNow,
     });
   } catch (error) {
     res.status(500).json({
-      message: "Failed to fetch donation history",
+      message:
+        "Failed to fetch donation history",
       error: error.message,
     });
   }
 };
+
+// ---------------------------------------------------------
+// EXPORTS
+// ---------------------------------------------------------
 
 module.exports = {
   getMyProfile,
