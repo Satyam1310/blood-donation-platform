@@ -2,6 +2,8 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const User = require("../models/User");
 const DonorProfile = require("../models/DonorProfile");
+const EMAILJS_API_URL =
+  "https://api.emailjs.com/api/v1.0/email/send";
 
 const generateToken = (userId) => {
   return jwt.sign(
@@ -25,6 +27,13 @@ const getSafeUser = (user) => ({
   // Verification status
   emailVerified: user.emailVerified,
   phoneVerified: user.phoneVerified,
+
+  // Email verification lock status
+  emailVerificationAttempts:
+    user.emailVerificationAttempts || 0,
+
+  emailVerificationLockedUntil:
+    user.emailVerificationLockedUntil || null,
 
   // Contact privacy settings
   showPhone: user.showPhone,
@@ -53,65 +62,47 @@ const getVerificationExpiry = () => {
   );
 };
 
-// Send email through Resend.
+// Send email through EmailJS.
 const sendVerificationEmail = async (
   email,
   name,
   code
 ) => {
   if (
-    !process.env.RESEND_API_KEY ||
-    !process.env.EMAIL_FROM
+    !process.env.EMAILJS_SERVICE_ID ||
+    !process.env.EMAILJS_TEMPLATE_ID ||
+    !process.env.EMAILJS_PUBLIC_KEY
   ) {
     throw new Error(
-      "Email verification is not configured. Add RESEND_API_KEY and EMAIL_FROM to .env"
+      "EmailJS is not configured. Check EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID and EMAILJS_PUBLIC_KEY in .env"
     );
   }
 
   const response = await fetch(
-    "https://api.resend.com/emails",
+    EMAILJS_API_URL,
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: process.env.EMAIL_FROM,
-        to: [email],
-        subject:
-          "Verify your Blood Donation account",
-        html: `
-          <div>
-            <h2>Verify your email</h2>
+        service_id:
+          process.env.EMAILJS_SERVICE_ID,
 
-            <p>Hello ${name || "there"},</p>
+        template_id:
+          process.env.EMAILJS_TEMPLATE_ID,
 
-            <p>
-              Use the following code to verify your
-              email address:
-            </p>
+        user_id: 
+          process.env.EMAILJS_PUBLIC_KEY,
+        
+        accessToken: 
+          process.env.EMAILJS_PRIVATE_KEY,
 
-            <div style="
-              font-size: 32px;
-              font-weight: bold;
-              letter-spacing: 8px;
-              padding: 18px;
-              background: #f5f5f5;
-              text-align: center;
-              margin: 24px 0;
-            ">
-              ${code}
-            </div>
-
-            <p>This code expires in 10 minutes.</p>
-
-            <p>
-              If you did not request this verification,
-              you can ignore this email.
-            </p>
-          </div>
-        `,
+        template_params: {
+          name: name || "there",
+          code,
+          to_email: email,
+     },
       }),
     }
   );
@@ -120,7 +111,7 @@ const sendVerificationEmail = async (
     const errorText = await response.text();
 
     throw new Error(
-      `Email service failed: ${errorText}`
+      `EmailJS service failed: ${errorText}`
     );
   }
 };
@@ -295,6 +286,28 @@ const sendEmailVerification = async (
       });
     }
 
+    // Check whether email verification is currently locked
+    if (
+      user.emailVerificationLockedUntil &&
+      user.emailVerificationLockedUntil > new Date()
+    ) {
+      return res.status(429).json({
+        message:
+          "Email verification is locked for 24 hours because of too many incorrect attempts.",
+        lockedUntil:
+          user.emailVerificationLockedUntil,
+      });
+    }
+
+    // If the previous lock has expired, reset the attempt counter.
+    if (
+      user.emailVerificationLockedUntil &&
+      user.emailVerificationLockedUntil <= new Date()
+    ) {
+      user.emailVerificationAttempts = 0;
+      user.emailVerificationLockedUntil = null;
+    }
+
     const code = generateVerificationCode();
 
     user.emailVerificationTokenHash =
@@ -352,13 +365,40 @@ const verifyEmail = async (req, res) => {
     const user = await User.findById(
       req.user._id
     ).select(
-      "+emailVerificationTokenHash +emailVerificationExpires"
+      "+emailVerificationTokenHash " +
+        "+emailVerificationExpires " +
+        "+emailVerificationAttempts " +
+        "+emailVerificationLockedUntil"
     );
 
     if (!user) {
       return res.status(404).json({
         message: "User not found",
       });
+    }
+
+    // Check whether verification is currently locked
+    if (
+      user.emailVerificationLockedUntil &&
+      user.emailVerificationLockedUntil > new Date()
+    ) {
+      return res.status(429).json({
+        message:
+          "Email verification is locked for 24 hours because of too many incorrect attempts.",
+        lockedUntil:
+          user.emailVerificationLockedUntil,
+      });
+    }
+
+    // If the previous lock has expired, reset it
+    if (
+      user.emailVerificationLockedUntil &&
+      user.emailVerificationLockedUntil <= new Date()
+    ) {
+      user.emailVerificationAttempts = 0;
+      user.emailVerificationLockedUntil = null;
+
+      await user.save();
     }
 
     if (user.emailVerified) {
@@ -399,14 +439,45 @@ const verifyEmail = async (req, res) => {
       suppliedHash !==
       user.emailVerificationTokenHash
     ) {
+      user.emailVerificationAttempts += 1;
+
+      // Third incorrect attempt → 24-hour lock
+      if (user.emailVerificationAttempts >= 3) {
+        user.emailVerificationLockedUntil =
+          new Date(
+            Date.now() + 24 * 60 * 60 * 1000
+          );
+
+        // Invalidate the current OTP
+        user.emailVerificationTokenHash = null;
+        user.emailVerificationExpires = null;
+
+        await user.save();
+
+        return res.status(429).json({
+          message:
+            "Too many incorrect attempts. Email verification is locked for 24 hours.",
+          lockedUntil:
+            user.emailVerificationLockedUntil,
+        });
+      }
+
+      await user.save();
+
+      const attemptsRemaining =
+        3 - user.emailVerificationAttempts;
+
       return res.status(400).json({
         message: "Invalid verification code",
+        attemptsRemaining,
       });
     }
 
     user.emailVerified = true;
     user.emailVerificationTokenHash = null;
     user.emailVerificationExpires = null;
+    user.emailVerificationAttempts = 0;
+    user.emailVerificationLockedUntil = null;
 
     await user.save();
 

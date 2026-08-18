@@ -69,6 +69,18 @@ const userSchema = new mongoose.Schema(
       select: false,
     },
 
+    emailVerificationAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
+
+    emailVerificationLockedUntil: {
+     type: Date,
+      default: null,
+      select: false,
+    },
+
     // "recipient" is no longer a separate role.
     role: {
       type: String,

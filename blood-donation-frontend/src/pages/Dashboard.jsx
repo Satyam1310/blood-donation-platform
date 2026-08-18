@@ -81,6 +81,7 @@ export default function Dashboard() {
     useState("");
   const [verificationError, setVerificationError] =
     useState("");
+  const [verificationLocked, setVerificationLocked] = useState(false);
 
   const loadProfile = async () => {
     try {
@@ -399,10 +400,26 @@ export default function Dashboard() {
     } catch (err) {
       console.error(err);
 
+    const message =
+      err.response?.data?.message ||
+      "Email verification failed.";
+
+    if (err.response?.status === 429) {
+      setVerificationLocked(true);
+    }
+
+    const attemptsRemaining =
+      err.response?.data?.attemptsRemaining;
+
+    if (attemptsRemaining !== undefined) {
       setVerificationError(
-        err.response?.data?.message ||
-          "Email verification failed."
+        `${message}. ${attemptsRemaining} attempt${
+          attemptsRemaining === 1 ? "" : "s"
+        } remaining.`
       );
+    } else {
+      setVerificationError(message);
+    }
     } finally {
       setVerificationSubmitting(false);
     }
@@ -805,7 +822,7 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={handleSendVerificationCode}
-              disabled={verificationSending}
+              disabled={verificationLocked || verificationSending}
               className="px-5 py-2.5 rounded-full bg-ink text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-60"
             >
               {verificationSending
@@ -833,6 +850,7 @@ export default function Dashboard() {
                 autoComplete="one-time-code"
                 placeholder="Enter 6-digit code"
                 value={verificationCode}
+                disabled={verificationLocked}
                 onChange={(e) => {
                   const value =
                     e.target.value
@@ -848,6 +866,7 @@ export default function Dashboard() {
               <button
                 type="submit"
                 disabled={
+                  verificationLocked ||
                   verificationSubmitting ||
                   verificationCode.length !== 6
                 }
