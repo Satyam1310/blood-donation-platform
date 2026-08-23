@@ -81,6 +81,18 @@ const userSchema = new mongoose.Schema(
       select: false,
     },
 
+    passwordResetTokenHash: {
+      type: String,
+      default: null,
+      select: false,
+    },
+
+    passwordResetExpires: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+
     // "recipient" is no longer a separate role.
     role: {
       type: String,

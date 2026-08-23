@@ -14,6 +14,8 @@ import Requests from "./pages/Requests";
 import StartRequest from "./pages/StartRequest";
 import Benefits from "./pages/Benefits";
 import Myths from "./pages/Myths";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 
 export default function App() {
   return (
@@ -34,6 +36,16 @@ export default function App() {
               <Route
                 path="/signup"
                 element={<Signup />}
+              />
+
+              <Route
+                path="/forgot-password"
+                element={<ForgotPassword />}
+              />
+
+              <Route
+                path="/reset-password/:token"
+                element={<ResetPassword />}
               />
 
               {/* Donor search requires login */}

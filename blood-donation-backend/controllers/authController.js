@@ -55,6 +55,16 @@ const hashVerificationCode = (code) => {
     .digest("hex");
 };
 
+// Generate a secure password reset token.
+const generatePasswordResetToken = () => {
+  return crypto.randomBytes(32).toString("hex");
+};
+
+// Password reset token validity: 10 minutes.
+const getPasswordResetExpiry = () => {
+  return new Date(Date.now() + 10 * 60 * 1000);
+};
+
 // Verification code validity: 10 minutes.
 const getVerificationExpiry = () => {
   return new Date(
@@ -112,6 +122,60 @@ const sendVerificationEmail = async (
 
     throw new Error(
       `EmailJS service failed: ${errorText}`
+    );
+  }
+};
+
+// Send password reset email through EmailJS.
+const sendPasswordResetEmail = async (
+  email,
+  name,
+  resetUrl
+) => {
+  if (
+    !process.env.EMAILJS_SERVICE_ID ||
+    !process.env.EMAILJS_RESET_TEMPLATE_ID ||
+    !process.env.EMAILJS_PUBLIC_KEY
+  ) {
+    throw new Error(
+      "Password reset email is not configured. Check EMAILJS_SERVICE_ID, EMAILJS_RESET_TEMPLATE_ID and EMAILJS_PUBLIC_KEY in .env"
+    );
+  }
+
+  const response = await fetch(
+    EMAILJS_API_URL,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        service_id:
+          process.env.EMAILJS_SERVICE_ID,
+
+        template_id:
+          process.env.EMAILJS_RESET_TEMPLATE_ID,
+
+        user_id:
+          process.env.EMAILJS_PUBLIC_KEY,
+
+        accessToken:
+          process.env.EMAILJS_PRIVATE_KEY,
+
+        template_params: {
+          name: name || "there",
+          reset_url: resetUrl,
+          to_email: email,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    throw new Error(
+      `EmailJS password reset failed: ${errorText}`
     );
   }
 };
@@ -245,6 +309,161 @@ const login = async (req, res) => {
     res.status(500).json({
       message: "Login failed",
       error: error.message,
+    });
+  }
+};
+
+// ---------------------------------------------------------
+// FORGOT PASSWORD
+// ---------------------------------------------------------
+
+// @route POST /api/auth/forgot-password
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        message: "Email is required",
+      });
+    }
+
+    const user = await User.findOne({
+      email: email.toLowerCase().trim(),
+    }).select(
+      "+passwordResetTokenHash +passwordResetExpires"
+    );
+
+    // Do not reveal whether an account exists.
+    if (!user) {
+      return res.status(200).json({
+        message:
+          "If an account with that email exists, a password reset link has been sent.",
+      });
+    }
+
+    const resetToken =
+      generatePasswordResetToken();
+
+    user.passwordResetTokenHash =
+      hashVerificationCode(resetToken);
+
+    user.passwordResetExpires =
+      getPasswordResetExpiry();
+
+    await user.save();
+
+    const clientUrl =
+      process.env.CLIENT_URL;
+
+    if (!clientUrl) {
+      user.passwordResetTokenHash = null;
+      user.passwordResetExpires = null;
+
+      await user.save();
+
+      throw new Error(
+        "CLIENT_URL is not configured in .env"
+      );
+    }
+
+    const resetUrl =
+      `${clientUrl}/reset-password/${resetToken}`;
+
+    try {
+      await sendPasswordResetEmail(
+        user.email,
+        user.name,
+        resetUrl
+      );
+    } catch (emailError) {
+      // Invalidate the token if email delivery fails.
+      user.passwordResetTokenHash = null;
+      user.passwordResetExpires = null;
+
+      await user.save();
+
+      throw emailError;
+    }
+
+    return res.status(200).json({
+      message:
+        "If an account with that email exists, a password reset link has been sent.",
+    });
+  } catch (error) {
+    console.error(
+      "Forgot password error:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "Unable to process password reset request",
+    });
+  }
+};
+
+// ---------------------------------------------------------
+// RESET PASSWORD
+// ---------------------------------------------------------
+
+// @route POST /api/auth/reset-password
+const resetPassword = async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({
+        message: "Reset token and new password are required",
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        message: "Password must be at least 6 characters long",
+      });
+    }
+
+    const tokenHash = hashVerificationCode(token);
+
+    const user = await User.findOne({
+      passwordResetTokenHash: tokenHash,
+      passwordResetExpires: {
+        $gt: new Date(),
+      },
+    }).select(
+      "+password +passwordResetTokenHash +passwordResetExpires"
+    );
+
+    if (!user) {
+      return res.status(400).json({
+        message:
+          "Password reset token is invalid or has expired",
+      });
+    }
+
+    // Set the new password.
+    // The User pre-save middleware will hash it.
+    user.password = password;
+
+    // Invalidate the reset token immediately.
+    user.passwordResetTokenHash = null;
+    user.passwordResetExpires = null;
+
+    await user.save();
+
+    return res.status(200).json({
+      message:
+        "Password reset successfully. You can now log in with your new password.",
+    });
+  } catch (error) {
+    console.error(
+      "Reset password error:",
+      error
+    );
+
+    return res.status(500).json({
+      message: "Unable to reset password",
     });
   }
 };
@@ -556,6 +775,8 @@ const updatePrivacySettings = async (
 module.exports = {
   signup,
   login,
+  forgotPassword,
+  resetPassword,
   getMe,
   sendEmailVerification,
   verifyEmail,
